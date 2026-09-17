@@ -1,0 +1,21 @@
+# 环境变量与密钥（重要：数据库密码等敏感信息，永不上传）
+.env
+.env.local
+.env.*.local
+
+# 依赖包目录（体积巨大，且可用 npm install 重建，不需要上传）
+node_modules/
+
+# 编辑器与系统自动生成的文件
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 日志文件
+*.log
+npm-debug.log*
+
+# 构建产物
+dist/
+build/
