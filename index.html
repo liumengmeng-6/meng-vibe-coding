@@ -3,13 +3,139 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>meng-vibe-coding｜占位页</title>
+  <title>出行规划小助手｜预算内最合适的行程</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>meng-vibe-coding</h1>
-  <p>这是 Day 2 的占位页，用来验证 GitHub 仓库和提交流程是否正常。</p>
-  <p>真正的网站功能从 Day 7 开始做，这一页之后会被替换掉。</p>
-  <hr>
-  <p>学习记录：2026-09-17 首次提交</p>
+
+  <!-- ① 标题区 -->
+  <header class="site-header">
+    <div class="wrap">
+      <h1>出行规划小助手</h1>
+      <p class="tagline">给我几个城市、几天、一个预算，排出一套花得起、也不难受的行程。</p>
+      <p class="sub-tagline">给预算紧张的学生党 —— 不算最便宜，只算<b>预算内最合适</b>。</p>
+    </div>
+  </header>
+
+  <main class="wrap">
+
+    <!-- ② 输入区 -->
+    <section class="card" id="input-card">
+      <h2 class="card-title">① 填一下你的计划</h2>
+
+      <div class="field">
+        <label for="from-city">出发城市 <span class="required">*</span></label>
+        <input type="text" id="from-city" placeholder="例如：武汉" maxlength="10" autocomplete="off">
+        <p class="error" id="error-from-city" hidden></p>
+      </div>
+
+      <div class="field">
+        <label for="to-city-input">想去的城市 <span class="required">*</span>
+          <span class="hint">最多 4 个</span>
+        </label>
+        <div class="city-picker">
+          <input type="text" id="to-city-input" placeholder="输入城市名后按「添加」，例如：西安" maxlength="10" autocomplete="off">
+          <button type="button" class="btn btn-ghost" id="btn-add-city">添加</button>
+        </div>
+        <div class="chips" id="city-chips" aria-live="polite"></div>
+        <p class="field-note">内置了成都、重庆的推荐清单；其他城市也能去，清单自己添加。</p>
+        <p class="error" id="error-to-city" hidden></p>
+      </div>
+
+      <div class="field">
+        <label for="days">玩几天 <span class="required">*</span>
+          <span class="hint">2 – 20 天</span>
+        </label>
+        <input type="number" id="days" placeholder="例如：7" min="2" max="20" step="1">
+        <p class="error" id="error-days" hidden></p>
+      </div>
+
+      <div class="field">
+        <label for="budget">总预算 <span class="hint">元/人 · 选填，留空则只算总花费</span></label>
+        <input type="number" id="budget" placeholder="例如：2000" min="1" step="1">
+        <p class="error" id="error-budget" hidden></p>
+      </div>
+
+      <div class="actions">
+        <button type="button" class="btn btn-primary" id="btn-generate">生成方案</button>
+        <button type="button" class="btn btn-quiet" id="btn-reset">清空重填</button>
+      </div>
+    </section>
+
+    <!-- ③ 结果区：点「生成方案」之前完全不显示 -->
+    <section id="result-area" hidden>
+
+      <div class="card" id="block-plans" hidden>
+        <h2 class="card-title">① 整体方案对比</h2>
+        <p class="card-note">下面几套方案是<b>把各种公共交通组合起来</b>算好的。每套的交通方式不同，
+          天数安排和总花费也会跟着变 —— 挑一套合心意的，点按钮就能看它的详细行程。</p>
+        <div id="plans-body" class="plans-wrap"></div>
+      </div>
+
+      <div class="card" id="block-itinerary" hidden>
+        <h2 class="card-title">② 每日行程</h2>
+        <div class="table-scroll">
+          <table class="data-table" id="table-itinerary">
+            <thead>
+              <tr><th>天数</th><th>城市</th><th>当天大致安排</th><th>当天花费估算</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" id="block-transport" hidden>
+        <h2 class="card-title">③ 城际交通方案对比</h2>
+        <p class="card-note">每段路把所有可行方式都列出来了，标了「最快」「最省」，
+          还有✓说明当前看的那套方案选了哪种。想换的话，回上面切方案。</p>
+        <div class="table-scroll">
+          <table class="data-table" id="table-transport">
+            <thead>
+              <tr><th>本方案选用</th><th>方式</th><th>耗时</th><th>单人票价</th><th>说明</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div id="transport-notes"></div>
+      </div>
+
+      <div class="card" id="block-cost" hidden>
+        <h2 class="card-title">④ 花费清单</h2>
+        <div class="table-scroll">
+          <table class="data-table" id="table-cost">
+            <thead>
+              <tr><th>项目</th><th>计算口径</th><th>金额</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" id="block-budget" hidden>
+        <h2 class="card-title">⑤ 预算结论</h2>
+        <div id="budget-verdict"></div>
+      </div>
+
+      <div class="card" id="block-highlights" hidden>
+        <h2 class="card-title">⑥ 美食美景清单</h2>
+        <div id="highlights-body"></div>
+        <p class="field-note">参考：以上推荐的花费仅作参考，<b>未计入</b>上面的合计。</p>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- ④ 底部声明 -->
+  <footer class="site-footer">
+    <div class="wrap">
+      <p><b>估算值，仅供参考</b> —— 页面里的所有价格均为学生档参考价，不是实时票价 / 房价；旺季（如国庆）住宿会明显上浮。</p>
+      <p class="footer-note">纯静态网页，不联网、不上传任何数据。你自己添加的地点会存在本机浏览器里，刷新还在；填的城市和天数不会保留。</p>
+    </div>
+  </footer>
+
+  <!-- 逻辑脚本：必须是普通 script（不能用 type="module"），否则双击打开时不会执行 -->
+  <script src="app.js" defer></script>
+
 </body>
 </html>
