@@ -3,6 +3,17 @@
 .env.local
 .env.*.local
 
+# 凭证与私钥文件（各种云服务、服务器登录用，一旦上传等于把钥匙给出去）
+credentials.json
+serviceAccount.json
+*credentials*.json
+*.pem
+*.key
+*.p12
+id_rsa
+id_rsa.pub
+.npmrc
+
 # 依赖包目录（体积巨大，且可用 npm install 重建，不需要上传）
 node_modules/
 
