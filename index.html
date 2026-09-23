@@ -4,16 +4,49 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>出行规划小助手｜预算内最合适的行程</title>
-  <link rel="stylesheet" href="style.css">
+
+  <!-- 后面的 ?v=20260923h 是"版本号"，不是路径。
+       作用：强迫浏览器在样式更新后重新下载 style.css。
+       不加的话，浏览器会把旧的 CSS 存在本地反复用，
+       结果就是"我明明改了样式，你打开却没变化"。
+       注意：这仍然只是本地文件，不联网，离线照常可用。 -->
+  <link rel="stylesheet" href="style.css?v=20260923h">
+
+  <!-- 主题抢先应用：必须在 <body> 画出来之前执行，
+       否则选了赛博主题的人刷新时会先闪一下白屏再变黑（很难受）。
+       所以这段是内联的、放在 head 里，不能挪到 app.js。 -->
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem('meng-vibe-coding:theme');
+        if (saved === 'cyber') {
+          document.documentElement.setAttribute('data-theme', 'cyber');
+        }
+      } catch (e) {
+        /* 隐私模式下 localStorage 不可用，忽略即可，用默认明亮主题 */
+      }
+    })();
+  </script>
 </head>
 <body>
 
+  <!-- 点「生成方案」时顶端滑过一条进度条（算得很快，所以它主要是"有动静"的反馈） -->
+  <div class="progress-bar" id="progress-bar" aria-hidden="true"></div>
+
+  <!-- 明亮主题下标题区背后的柔光（纯装饰，不接收点击） -->
+  <div class="light-glow" aria-hidden="true"><i></i><i></i><i></i></div>
+
   <!-- ① 标题区 -->
   <header class="site-header">
+    <button type="button" class="theme-toggle" id="btn-theme" aria-pressed="false">
+      <span class="dot" aria-hidden="true"></span>
+      <span id="theme-label">赛博主题</span>
+    </button>
     <div class="wrap">
       <h1>出行规划小助手</h1>
       <p class="tagline">给我几个城市、几天、一个预算，排出一套花得起、也不难受的行程。</p>
       <p class="sub-tagline">给预算紧张的学生党 —— 不算最便宜，只算<b>预算内最合适</b>。</p>
+      <span class="header-signal"><b></b>system ready</span>
     </div>
   </header>
 
@@ -59,6 +92,81 @@
       <div class="actions">
         <button type="button" class="btn btn-primary" id="btn-generate">生成方案</button>
         <button type="button" class="btn btn-quiet" id="btn-reset">清空重填</button>
+      </div>
+
+      <!-- 纸飞机航线图案（纯装饰，读屏软件会跳过）
+           这是一张手写的 SVG 矢量图，不是图片文件，也不来自网络：
+           离线照常显示，放大到多宽都清晰，颜色跟着主题自动变。
+           画的是"从武汉出发，一路虚线串起几个城市"的示意航线。
+
+           纸飞机怎么画的：真纸飞机就是一张纸对折后再折出两只机翼，
+           所以要用【两个面】拼出来 —— 朝光的一面浅、背光的一面深，
+           中间那条折痕是整张图的"脊梁"。只画一个三角形就会像个箭头，
+           一点都不像飞机。 -->
+      <div class="route-art" aria-hidden="true">
+        <svg viewBox="0 0 1000 200" role="presentation" focusable="false">
+
+          <!-- ① 主航线：从左边起点出发，一路虚线往右上
+               注意 fill="none" 必须写死在标签上：<path> 默认是
+               fill:black，万一 CSS 没加载上，整条路线会糊成黑色色块 -->
+          <path class="route-line" fill="none" stroke="#2a5fe0" stroke-width="2.4"
+                d="M55 150 C 200 150, 250 60, 400 60 S 640 26, 780 34"
+                stroke-dasharray="12 14"></path>
+
+          <!-- ② 支线：从起点分出、往右下走，暗示还能去别的城市 -->
+          <path class="route-line" fill="none" stroke="#2a5fe0" stroke-width="2.4"
+                d="M55 150 C 230 162, 400 172, 580 160 S 820 130, 940 134"
+                stroke-dasharray="12 14"></path>
+
+          <!-- ③ 一条更淡的短线，让画面下方不至于空掉 -->
+          <path class="route-line" fill="none" stroke="#2a5fe0" stroke-width="2.4"
+                d="M120 180 C 300 192, 480 190, 660 176"
+                stroke-dasharray="7 12" opacity=".2"></path>
+
+          <!-- 地图上的地点圆点 -->
+          <circle class="route-node main" fill="#2a5fe0" cx="55"  cy="150" r="7"></circle>
+          <circle class="route-node" fill="#2a5fe0" cx="240" cy="96"  r="5"></circle>
+          <circle class="route-node" fill="#2a5fe0" cx="400" cy="60"  r="5"></circle>
+          <circle class="route-node" fill="#2a5fe0" cx="580" cy="32"  r="5"></circle>
+          <circle class="route-node main" fill="#2a5fe0" cx="780" cy="34" r="7"></circle>
+          <circle class="route-node" fill="#2a5fe0" cx="580" cy="160" r="5"></circle>
+          <circle class="route-node main" fill="#2a5fe0" cx="940" cy="134" r="6"></circle>
+
+          <!-- ===== 纸飞机 ×3 =====
+
+               重要：这里【不用】 <defs> + <use> 复用的写法，而是把
+               每一张飞机的四个面原样写出来。原因：
+               <use> 引用出来的内容属于"影子副本"，CSS 选择器
+               （.route-art .pf-wing-a 这种）在部分浏览器里匹配不到它，
+               颜色就取不到值 —— 最后渲染成黑色。多写两遍换来的是
+               "一定能上色"，完全值得。
+
+               每张飞机的构成（朝向【右上】）：
+                 · 机头 (58,15)、脊线末端 (40,37)、机尾 (24,42)
+                 · 上机翼 / 下机翼：浅色，从脊线往左上张开
+                 · 机身：最深的一块三角
+                 · 折痕：压在脊线上的一条细线 -->
+          <g class="plane plane-a" transform="translate(300 16) rotate(-6) scale(1.5)">
+            <path class="pf-wing-a" fill="#1e7cf5" d="M58 15 L40 37 L19 21 Z"></path>
+            <path class="pf-wing-b" fill="#1e7cf5" d="M58 15 L40 37 L30 25 Z"></path>
+            <path class="pf-fus-a"  fill="#1e7cf5" d="M58 15 L24 42 L40 37 Z"></path>
+            <path class="pf-crease" stroke="#ffffff" d="M58 15 L40 37"></path>
+          </g>
+
+          <g class="plane plane-b" transform="translate(630 2) rotate(12) scale(1.0)">
+            <path class="pf-wing-a" fill="#1e7cf5" d="M58 15 L40 37 L19 21 Z"></path>
+            <path class="pf-wing-b" fill="#1e7cf5" d="M58 15 L40 37 L30 25 Z"></path>
+            <path class="pf-fus-a"  fill="#1e7cf5" d="M58 15 L24 42 L40 37 Z"></path>
+            <path class="pf-crease" stroke="#ffffff" d="M58 15 L40 37"></path>
+          </g>
+
+          <g class="plane plane-c" transform="translate(112 62) rotate(-26) scale(0.75)">
+            <path class="pf-wing-a" fill="#1e7cf5" d="M58 15 L40 37 L19 21 Z"></path>
+            <path class="pf-wing-b" fill="#1e7cf5" d="M58 15 L40 37 L30 25 Z"></path>
+            <path class="pf-fus-a"  fill="#1e7cf5" d="M58 15 L24 42 L40 37 Z"></path>
+            <path class="pf-crease" stroke="#ffffff" d="M58 15 L40 37"></path>
+          </g>
+        </svg>
       </div>
     </section>
 
@@ -134,8 +242,9 @@
     </div>
   </footer>
 
-  <!-- 逻辑脚本：必须是普通 script（不能用 type="module"），否则双击打开时不会执行 -->
-  <script src="app.js" defer></script>
+  <!-- 逻辑脚本：必须是普通 script（不能用 type="module"），否则双击打开时不会执行。
+       末尾的 ?v= 是版本号，作用同上面的 style.css：改了脚本你才看得到变化。 -->
+  <script src="app.js?v=20260923h" defer></script>
 
 </body>
 </html>

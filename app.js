@@ -1061,6 +1061,36 @@ function renderTransport(split, chosenKeys) {
 }
 
 /* B3 花费清单 */
+/* 数字滚动：把一个金额从 0 滚到目标值，约 0.7 秒内跑完。
+   为什么加：合计金额是整页最该被看到的数字，让它"数上去"比直接显示更有存在感。
+   性能做法：用 requestAnimationFrame（浏览器每帧回调一次，天然跟着屏幕刷新率），
+   不用 setInterval（那个固定间隔，掉帧时会跳字）。 */
+function countUp(el, target, ms) {
+  // 极老环境没有 requestAnimationFrame 就直接显示结果，不让功能坏掉
+  if (typeof requestAnimationFrame !== 'function') {
+    el.textContent = '¥' + target;
+    return;
+  }
+
+  var DURATION = ms || 720;
+  var start = null;
+
+  function step(ts) {
+    if (start === null) start = ts;
+    var p = Math.min(1, (ts - start) / DURATION);
+    // easeOutCubic：开头快、结尾缓缓停住，比匀速自然
+    var eased = 1 - Math.pow(1 - p, 3);
+    el.textContent = '¥' + Math.round(target * eased);
+    if (p < 1) {
+      requestAnimationFrame(step);
+    } else {
+      el.textContent = '¥' + target;   // 保证最终值精确
+    }
+  }
+
+  requestAnimationFrame(step);
+}
+
 function renderCost(cost) {
   var tbody = document.getElementById('table-cost').querySelector('tbody');
   tbody.innerHTML = '';
@@ -1079,14 +1109,22 @@ function renderCost(cost) {
     td3.className = 'num';
     td3.textContent = '¥' + it.amount;
 
+    // 每项金额也逐个淡入，错峰 60ms，看起来是"一项项算出来"
+    tr.classList.add('reveal-item');
+    tr.style.animationDelay = (i * 60) + 'ms';
+
     tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3);
     tbody.appendChild(tr);
   }
 
   var trTotal = document.createElement('tr');
   trTotal.className = 'row-total';
-  trTotal.innerHTML = '<td>合计</td><td>以上五项相加</td><td class="num">¥' + cost.total + '</td>';
+  trTotal.innerHTML = '<td>合计</td><td>以上五项相加</td><td class="num" id="cost-total">¥0</td>';
   tbody.appendChild(trTotal);
+
+  // 合计金额滚上去
+  var totalEl = document.getElementById('cost-total');
+  if (totalEl) countUp(totalEl, cost.total, 760);
 }
 
 /* B4 预算结论 */
@@ -1490,6 +1528,79 @@ function clearSelfAddedStorage() {
   } catch (e) {}
 }
 
+/* ---------- 主题切换（Day 8 追加） ----------
+
+   两套主题：明亮（默认）/ 赛博（深色霓虹）。
+   实现方式：给 <html> 打一个 data-theme="cyber" 属性，
+   style.css 里所有颜色都走 CSS 变量，属性一变整站跟着变。
+
+   为什么在 head 里还有一段重复的读取逻辑？
+     那段是为了"防止刷新时闪白"——必须在页面画出来之前就把属性设好，
+     而 app.js 是 defer 加载的，那时已经晚了。两者读的是同一个 key。 */
+
+var THEME_KEY = 'meng-vibe-coding:theme';
+var THEME_CYBER = 'cyber';
+
+/* 读当前主题（读不到就当作默认的明亮主题） */
+function getTheme() {
+  var attr = document.documentElement.getAttribute('data-theme');
+  return attr === THEME_CYBER ? THEME_CYBER : 'light';
+}
+
+/* 把主题写到页面上 + 存进本地存储 */
+function applyTheme(theme) {
+  if (theme === THEME_CYBER) {
+    document.documentElement.setAttribute('data-theme', THEME_CYBER);
+  } else {
+    document.documentElement.removeAttribute('data-theme');
+  }
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(THEME_KEY, theme);
+    }
+  } catch (e) {
+    /* 隐私模式下存不进，就当"仅当前页面有效" */
+  }
+  syncThemeButton();
+}
+
+/* 按钮上的文字随主题变：现在是什么主题，就提示"切到另一个" */
+function syncThemeButton() {
+  var btn = document.getElementById('btn-theme');
+  var label = document.getElementById('theme-label');
+  if (!btn || !label) return;
+  var isCyber = getTheme() === THEME_CYBER;
+  label.textContent = isCyber ? '明亮主题' : '赛博主题';
+  btn.setAttribute('aria-pressed', isCyber ? 'true' : 'false');
+  btn.title = isCyber ? '切换回明亮主题' : '切换到赛博主题（深色霓虹）';
+}
+
+function initTheme() {
+  var btn = document.getElementById('btn-theme');
+  if (btn) {
+    btn.addEventListener('click', function () {
+      applyTheme(getTheme() === THEME_CYBER ? 'light' : THEME_CYBER);
+    });
+  }
+  syncThemeButton();
+}
+
+/* ---------- 顶端进度条 ----------
+
+   点「生成方案」后滑过一条，给"正在算"的视觉反馈。
+   算法其实只要几十毫秒，所以它跑完就自己淡出，不留痕迹。
+
+   为什么要"先摘类、强制重排、再加类"这三步：
+   连续两次点击时，如果类还在，浏览器会认为动画没变、不重播。
+   中间读一次 offsetWidth 逼浏览器重新计算样式，动画才会重新跑。 */
+function runProgressBar() {
+  var bar = document.getElementById('progress-bar');
+  if (!bar) return;
+  bar.classList.remove('running');
+  void bar.offsetWidth;
+  bar.classList.add('running');
+}
+
 function refreshSelfSubtotal(city, el) {
   var list = selfAdded[city] || [];
   if (list.length === 0) {
@@ -1544,6 +1655,10 @@ function removeSelfAdded(city, idx) {
 
 /* ---------- C. 城市标签 ---------- */
 
+/* 记住上一次画出来的城市，用来判断哪个是"新加进来的"。
+   只有新加的那个才播"弹出"动画 —— 否则每次重画所有标签一起弹，很闹。 */
+var lastChipList = [];
+
 function renderCityChips() {
   var box = document.getElementById('city-chips');
   box.innerHTML = '';
@@ -1553,6 +1668,14 @@ function renderCityChips() {
     var chip = document.createElement('span');
     chip.className = 'chip';
     chip.textContent = city;
+
+    // 判断是不是这次新加的（上次没有、这次有）
+    if (lastChipList.indexOf(city) < 0) {
+      chip.style.animationDelay = '0ms';
+    } else {
+      // 老标签不播动画：把 animation 关掉，免得一闪
+      chip.style.animation = 'none';
+    }
 
     var btn = document.createElement('button');
     btn.type = 'button';
@@ -1570,6 +1693,9 @@ function renderCityChips() {
     chip.appendChild(btn);
     box.appendChild(chip);
   }
+
+  // 记下这一轮的结果，供下次比较
+  lastChipList = selectedCities.slice();
 }
 
 function addCity() {
@@ -1614,6 +1740,10 @@ function generate() {
 
   var fromCity = input.fromCity.trim();
   input.fromCity = fromCity;
+
+  /* 校验都过了，才开始"干活"的视觉反馈：
+     顶端滑过一条进度条。它不阻塞任何计算，只是个看得见的动静。 */
+  runProgressBar();
 
   // F2 固定顺序：校验 → 组合整体方案 → 排交通 → 算总账 → 比预算 → 出清单
   var plans = buildPlans(input);
@@ -1666,9 +1796,24 @@ function generate() {
 
   // 显示结果区 + 逐块显示
   document.getElementById('result-area').hidden = false;
-  ['block-plans', 'block-itinerary', 'block-transport', 'block-cost',
-   'block-budget', 'block-highlights']
-    .forEach(function (id) { document.getElementById(id).hidden = false; });
+
+  /* 六块内容错峰淡入：每块比上一块晚 70 毫秒出现，
+     看起来是"依次滑入"而不是"啪一下全冒出来"。
+     用 CSS 动画（见 style.css 的 fade-up + .reveal 类），
+     这里只负责把类加上、并清掉上一次的延迟，避免第二次生成时累积。 */
+  var BLOCK_IDS = ['block-plans', 'block-itinerary', 'block-transport',
+                   'block-cost', 'block-budget', 'block-highlights'];
+
+  BLOCK_IDS.forEach(function (id, i) {
+    var el = document.getElementById(id);
+    el.hidden = false;
+    el.classList.remove('reveal');          // 先摘掉，才能重新触发动画
+    el.style.animationDelay = '';           // 清掉上一次的延迟
+    // 强制浏览器"重新计算一次样式"，否则连续两次生成时动画不会重播
+    void el.offsetWidth;
+    el.style.animationDelay = (i * 70) + 'ms';
+    el.classList.add('reveal');
+  });
 
   // 按顺序执行完，滚到结果那儿（否则用户不知道下面出东西了）
   // 加一层判断：极老的浏览器可能没有这个 API，不该因此让整个生成失败
@@ -1717,6 +1862,10 @@ function initApp() {
 
   // 读回上次存的自填地点（localStorage），这样刷新页面后自己加的地点还在
   loadSelfAdded();
+
+  // 主题按钮：注意它【不受"清空重填"影响】——
+  // 主题是长期偏好，跟本次填的城市天数不是一回事，所以不放进上面那个 reset 里。
+  initTheme();
 }
 
 // 注意：脚本用 defer 加载，执行时 DOM 已就绪，这里直接初始化即可

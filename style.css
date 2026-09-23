@@ -2,26 +2,166 @@
    出行规划小助手 · 样式
    规矩（TECH_DESIGN 第五节）：改样式只动这个文件
    设计取向：干净、清爽、学生党友好；窄屏（手机）也能读完，不用左右拖
+
+   主题（Day 8 追加）：两套 ——
+     · 明亮（默认）：浅底深字，教室 / 图书馆 / 白天户外看着舒服，截图干净
+     · 赛博（可选）：深空黑底 + 电子青 + 冷紫霓虹，科技感
+   切换靠 <html data-theme="cyber">，颜色全部走 CSS 变量，改一处全站生效。
    ============================================================ */
 
 :root {
-  --bg: #f6f7f9;
+  /* 告诉浏览器当前是浅色界面：滚动条、下拉框这些"原生控件"会跟着变，
+     否则赛博主题下会出现一条亮白色滚动条，很跳。 */
+  color-scheme: light;
+
+  /* --- 明亮主题（默认）：暖米白 ---
+     底色从原来的冷灰 #f6f7f9 换成暖米白 #faf7f2。
+     原因：冷灰配蓝色主色，整体偏"办公软件"；换成带一点黄红的米白后，
+     页面像纸一样有温度，白色的卡片放上去也能"浮起来"（原来卡片和白底几乎同色，
+     全靠边框撑着，很平）。
+     代价：底色一变，边框、补丁色都得跟着往暖调挪，否则冷灰边配暖底会发脏。
+     这就是下面一串色号都动了的原因。 */
+  --bg: #faf7f2;
   --card: #ffffff;
-  --border: #e3e6ea;
-  --ink: #23262b;
-  --ink-2: #6b7280;
-  --ink-3: #9aa1ab;
-  --brand: #2f6bff;
-  --brand-soft: #eef3ff;
+  --border: #e8e1d6;
+
+  --ink: #221f1a;            /* 墨色也带一点暖，不用纯黑 */
+  --ink-2: #6b6459;
+  /* ink-3 用在副标题、字段提示、页脚 —— 都是要读的正文级文字。
+     原来 #9aa1ab 对比度只有 2.43:1（WCAG 要求 ≥4.5），看着发虚，
+     Day 8 算过对比度后调深；换暖底后又按新底色重算过，现在是 5.3:1。 */
+  --ink-3: #6a6459;
+
+  --brand: #2a5fe0;
+  --brand-soft: #e9effc;     /* 冷色补丁底，刻意留住一点冷，用来"提神" */
+
   --good: #16794c;
-  --good-soft: #e8f6ef;
+  --good-soft: #e7f4ec;
   --bad: #b4322b;
-  --bad-soft: #fdeeed;
+  --bad-soft: #fbece9;
+
+  /* 抽出这些"补丁色"，是为了让深色主题能整体换掉。
+     原来它们散落在各处写死（#fff / #fafbfc / #fcfcfd），
+     深色主题下会变成一块块白斑。 */
+  --surface: #ffffff;        /* 顶部 / 底部条、按钮底 */
+  --surface-2: #f7f2e9;      /* 表头、斑马底 */
+  --surface-3: #fdfbf8;      /* 输入框底 */
+  --surface-4: #fffdfa;      /* 计划卡底 */
+  --hover: #f1ebe1;          /* 按钮悬浮 */
+  --field-text: #8c8577;     /* 输入框占位文字 */
+  --header-grad-a: #fdfbf7;  /* 标题区渐变起色 */
+  --header-grad-b: var(--bg);
+  --accent-line: none;       /* 标题区顶部的品牌横条（赛博主题才显示） */
+
+  /* 吃的 / 玩的 小标签 */
+  --tag-eat-bg: #fdeedd;
+  --tag-eat-fg: #9c5109;
+  --tag-play-bg: #e6effc;
+  --tag-play-fg: #24589c;
+
+  /* 方案卡被选中时的高亮边 */
+  --on-brand: #ffffff;       /* 主按钮上的文字色 */
+
+  /* 卡片顶部那条 3px 彩色细边：让卡片之间有了"分节"的感觉，
+     不再是几张一模一样的白纸。默认走主色。 */
+  --edge: var(--brand);
+
+  /* 纸飞机的颜色：比主色更亮更跳的天蓝/宝蓝。
+     单独开一个变量，是为了让它不跟按钮、航线同色 ——
+     整张图如果只有"一种蓝的深浅变化"，会显得很平。 */
+  --plane: #1e7cf5;
+
   --radius: 14px;
-  --shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 8px 24px rgba(16, 24, 40, .05);
+  /* 阴影加重了一档：底色变暖变浅后，卡片需要更明确的投影才"立得起来" */
+  --shadow: 0 1px 2px rgba(90, 66, 34, .05), 0 10px 28px rgba(90, 66, 34, .07);
+  --shadow-lift: 0 2px 5px rgba(90, 66, 34, .07), 0 18px 40px rgba(90, 66, 34, .12);
+}
+
+/* --- 赛博主题：深空黑底 + 电子青 + 冷紫 ---
+   红绿功能色特意调亮（#FF5C6E / #2EE6A8），
+   否则在深底上对比度不够，「超支警告」就失去了警示力。 */
+[data-theme="cyber"] {
+  color-scheme: dark;
+
+  --bg: #080b14;
+  --card: #0f1420;
+  --border: #1e2a3d;
+
+  --ink: #e8eefc;
+  --ink-2: #97a6c4;
+  /* 同上：调亮到 4.9:1，深底上不达标会显得字"糊" */
+  --ink-3: #8291b0;
+
+  --brand: #00e5ff;
+  --brand-soft: #0d2b38;
+
+  --good: #2ee6a8;
+  --good-soft: #08281f;
+  --bad: #ff5c6e;
+  --bad-soft: #2e0f16;
+
+  --surface: #0d1220;
+  --surface-2: #121a2a;
+  --surface-3: #0c111c;
+  --surface-4: #101827;
+  --hover: #1a2436;
+  --field-text: #6d7c99;
+  --header-grad-a: #101a2e;
+  --header-grad-b: var(--bg);
+  --accent-line: linear-gradient(90deg, #00e5ff 0%, #7c5cff 50%, #ff5c9e 100%);
+
+  --tag-eat-bg: #2b1a12;
+  --tag-eat-fg: #ffa463;
+  --tag-play-bg: #0d2333;
+  --tag-play-fg: #4fc3ff;
+
+  --on-brand: #04121a;
+
+  --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 8px 24px rgba(0, 0, 0, .45);
+  --shadow-lift: 0 2px 6px rgba(0, 0, 0, .55), 0 14px 34px rgba(0, 229, 255, .10);
+
+  /* 卡片顶部细边：赛博主题下换青→紫渐变，和标题区的霓虹线呼应 */
+  --edge: linear-gradient(90deg, #00e5ff 0%, #7c5cff 100%);
+
+  /* 赛博主题的纸飞机颜色：写明确的电子青。
+     ⚠️ 试过写 "跟着当前主题色走"（继承 color）的写法，但它要隔着一层
+        var() 去继承元素自己的 color，行为不够确定 —— 一旦解析不出来，
+        fill 就退化成浏览器默认的黑色，米白底上会是一只黑飞机。
+        写死色值最稳，行为 100% 确定。 */
+  --plane: #00e5ff;
 }
 
 * { box-sizing: border-box; }
+
+/* ============================================================
+   动效基础（Day 8 追加）
+
+   原则：
+   1. 动画只做"锦上添花"，不做"必须等它演完"——所以都很短（0.3–0.7 秒）。
+   2. 尊重系统设置：用户在操作系统里开了「减少动态效果」，
+      下面所有动画自动关闭（这是无障碍要求，不是可选项）。
+   3. 只用 transform / opacity / filter 做动画，不动 width/height/top/left
+      —— 后几个会让浏览器反复重排，卡。
+   ============================================================ */
+
+/* 动画时长与缓动曲线，统一放在变量里，方便一处调整 */
+:root {
+  --dur-fast: .16s;
+  --dur: .34s;
+  --dur-slow: .62s;
+  --ease: cubic-bezier(.22, .68, .32, 1);      /* 起步快、收尾缓，自然 */
+  --ease-spring: cubic-bezier(.34, 1.42, .5, 1); /* 带一点回弹，活泼 */
+}
+
+/* 系统开了「减少动态效果」→ 全部动画归零 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001s !important;
+    scroll-behavior: auto !important;
+  }
+}
 
 html, body {
   margin: 0;
@@ -33,35 +173,203 @@ body {
   color: var(--ink);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei",
                "PingFang SC", "Hiragino Sans GB", sans-serif;
-  font-size: 16px;
+  font-size: 17px;
   line-height: 1.65;
   -webkit-font-smoothing: antialiased;
+  /* 内容不满一屏时，也让页脚贴着窗口底部，不留半屏空白 */
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 赛博主题：底图铺一层极淡的网格线（科技感的来源，比铺霓虹色更耐看、也不干扰读字） */
+[data-theme="cyber"] body {
+  background-image:
+    linear-gradient(rgba(0, 229, 255, .045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 229, 255, .045) 1px, transparent 1px);
+  background-size: 44px 44px, 44px 44px;
+  background-attachment: fixed;
+}
+
+/* 明亮主题：底图铺两层很淡的东西，让米白不成为"一块死板的平色" ——
+   1. 一道斜向的暖色渐层（右上偏暖、左下偏冷），像自然光斜照在纸上；
+   2. 一层间隔 26px 的小圆点（透明度只有 4%），远看几乎看不见，
+      近看有一点点"纸纹"的质感。
+   两层都极淡，是为了不干扰读字 —— 底图的任务是氛围，不是抢戏。 */
+html:not([data-theme="cyber"]) body {
+  background-image:
+    radial-gradient(rgba(120, 96, 62, .055) 1px, transparent 1.2px),
+    linear-gradient(157deg, #fdf8ef 0%, #faf7f2 46%, #f6f3f4 100%);
+  background-size: 26px 26px, 100% 100%;
+  background-attachment: fixed, fixed;
+}
+
+/* 明亮主题：标题区背后一团缓慢漂移的柔光，让浅色页面不再"死白"。
+   放在固定层里、不接收鼠标事件，所以不会挡住任何按钮。
+   默认隐藏，只有非赛博主题（也就是明亮主题）才显示。 */
+.light-glow {
+  display: none;
+}
+
+html:not([data-theme="cyber"]) .light-glow {
+  display: block;
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 420px;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+html:not([data-theme="cyber"]) .light-glow i {
+  position: absolute;
+  display: block;
+  border-radius: 50%;
+  filter: blur(64px);
+  opacity: .62;
+}
+
+html:not([data-theme="cyber"]) .light-glow i:nth-child(1) {
+  width: 420px; height: 420px;
+  left: -80px; top: -140px;
+  background: #f3d9b8;
+  animation: drift-a 19s ease-in-out infinite alternate;
+}
+
+html:not([data-theme="cyber"]) .light-glow i:nth-child(2) {
+  width: 360px; height: 360px;
+  right: -60px; top: -110px;
+  background: #e6d3f5;
+  animation: drift-b 23s ease-in-out infinite alternate;
+}
+
+html:not([data-theme="cyber"]) .light-glow i:nth-child(3) {
+  width: 300px; height: 300px;
+  left: 46%; top: -60px;
+  background: #cfe6f7;
+  animation: drift-c 17s ease-in-out infinite alternate;
+}
+
+/* 赛博主题：网格"通电"—— 底纹缓慢向上流动，像电路在跑 */
+[data-theme="cyber"] body {
+  animation: grid-flow 6s linear infinite;
 }
 
 .wrap {
-  width: 100%;
-  max-width: 820px;
+  /* 宽度跟着窗口走：两边各留 3.5% 呼吸缝，但最多 1600px、最少 320px。
+     这样大屏上会自然铺开（不用手动放大），窗口再宽也不会拉到难读的超长行。 */
+  width: min(1600px, 93%);
+  max-width: none;
   margin: 0 auto;
   padding: 0 18px;
 }
 
+/* 让正文区自动撑开剩余高度，把页脚推到最下面 */
+.site-header, .site-footer { flex: none; }
+main, .page-main { flex: 1 0 auto; }
+
 /* ---------- ① 标题区 ---------- */
 
 .site-header {
-  padding: 40px 0 26px;
-  background: linear-gradient(180deg, #ffffff 0%, var(--bg) 100%);
+  position: relative;
+  padding: 44px 0 30px;
+  background: linear-gradient(180deg, var(--header-grad-a) 0%, var(--header-grad-b) 100%);
   border-bottom: 1px solid var(--border);
+}
+
+/* 赛博主题下，标题区顶部亮一条青 → 紫的霓虹线（明亮主题为 none，不显示） */
+.site-header::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: var(--accent-line);
+}
+
+/* 主题切换按钮：固定在标题区右上角 */
+.theme-toggle {
+  position: absolute;
+  top: 16px;
+  right: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 13px;
+  font-size: 13px;
+  font-family: inherit;
+  font-weight: 500;
+  color: var(--ink-2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: border-color .15s, color .15s, box-shadow .15s;
+}
+
+.theme-toggle:hover {
+  color: var(--brand);
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+
+.theme-toggle .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--brand);
+  flex: none;
 }
 
 .site-header h1 {
   margin: 0 0 10px;
-  font-size: 28px;
-  letter-spacing: -.4px;
+  font-size: 34px;
+  letter-spacing: -.6px;
+}
+
+/* 赛博主题：标题区顶部的霓虹线缓慢呼吸（明亮主题是 none，不显示） */
+[data-theme="cyber"] .site-header::before {
+  animation: neon-breathe 3.4s ease-in-out infinite;
+}
+
+/* 赛博主题：标题带一层冷青→紫的渐变字 + 霓虹光晕 */
+[data-theme="cyber"] .site-header h1 {
+  background: linear-gradient(92deg, #00e5ff 0%, #7c5cff 60%, #ff5c9e 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 0 26px rgba(0, 229, 255, .28);
+  animation: text-glow 4s ease-in-out infinite;
+}
+
+/* 标题右侧的"网络状态"小点：赛博主题下缓慢呼吸，像设备指示灯 */
+.header-signal {
+  display: none;
+}
+
+[data-theme="cyber"] .header-signal {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  font-size: 11px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--brand);
+  animation: breathe 2.6s ease-in-out infinite alternate;
+}
+
+[data-theme="cyber"] .header-signal b {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--brand);
+  box-shadow: 0 0 8px var(--brand);
 }
 
 .tagline {
   margin: 0 0 6px;
-  font-size: 16px;
+  font-size: 17px;
   color: var(--ink-2);
 }
 
@@ -76,12 +384,57 @@ body {
 /* ---------- 卡片 ---------- */
 
 .card {
+  position: relative;
+  overflow: hidden;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  padding: 22px 22px 24px;
+  padding: 24px 26px 26px;
   margin: 18px 0;
+  transition: box-shadow .2s, border-color .2s;
+}
+
+/* 每块卡片顶部压一条 3px 的彩色细边 ——
+   几张卡片连着往下排时，这条边充当"分节线"，
+   不至于变成一叠一模一样的白纸。（赛博主题下是青→紫渐变） */
+.card::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: var(--edge);
+  opacity: .9;
+}
+
+/* 结果区的每块卡换个色相，视觉上能区分"这是第几块" */
+#block-plans::after     { background: var(--brand); }
+#block-itinerary::after { background: #1f9d78; }
+#block-transport::after { background: #d98a18; }
+#block-cost::after      { background: #7c5cff; }
+#block-budget::after    { background: #cf5a86; }
+#block-highlights::after{ background: #3f9ad6; }
+
+/* 鼠标移上去轻轻浮起来 —— 让卡片有"层"，不再平贴背景 */
+.card:hover {
+  box-shadow: var(--shadow-lift);
+  border-color: var(--brand);
+}
+
+/* 赛博主题：卡片青色光晕缓缓脉冲，像通着电 */
+[data-theme="cyber"] .card {
+  background: linear-gradient(160deg, rgba(0, 229, 255, .05) 0%, transparent 42%), var(--card);
+  animation: glow-pulse 4.6s ease-in-out infinite;
+}
+
+/* 鼠标移上去时停掉脉冲，避免和 hover 阴影打架 */
+[data-theme="cyber"] .card:hover { animation: none; }
+
+/* ---------- 结果区逐块淡入 ----------
+   app.js 生成结果时给每块加上 .reveal 并设置 animationDelay（错峰 70ms）。
+   动画结束后回到普通状态（forwards 不必，因为终态就是常态）。 */
+.reveal {
+  animation: fade-up var(--dur-slow) var(--ease) both;
 }
 
 .card-title {
@@ -92,9 +445,52 @@ body {
 
 /* ---------- 输入区 ---------- */
 
-.field { margin-bottom: 18px; }
+/* ① 填一下你的计划：窄屏是一条条往下排，宽屏自动变成"一排格子"，
+   这样大屏不会留大片空白，也不用手动放大。
+   注意用 minmax(0, 1fr) 而不是 1fr：1fr 的最小宽度是"内容宽度"，
+   长占位文字会把格子顶宽、撑出横向滚动条。 */
+#input-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0 22px;
+}
+
+/* 卡片标题横跨整行，四个字段各占一个格子 */
+#input-card .card-title { grid-column: 1 / -1; }
+
+.field { margin-bottom: 18px; min-width: 0; }
 
 .field:last-of-type { margin-bottom: 8px; }
+
+/* 窗口 ≥ 900px：前两个字段（出发城市 / 想去的城市）各占一半，
+   后两个短字段（天数 / 预算）各占四分之一，最后一行正好排满；
+   操作按钮横跨整行。 */
+@media (min-width: 900px) {
+  #input-card { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  #input-card .field:nth-of-type(1),
+  #input-card .field:nth-of-type(2) { grid-column: span 2; }
+  #input-card .actions { grid-column: 1 / -1; }
+}
+
+@media (min-width: 1280px) {
+  /* 大屏：字段排成一行（2 + 1 + 1 + 1 = 5 格），按钮落在这个网格的下一行、横跨整行 */
+  #input-card { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  #input-card .field:nth-of-type(1) { grid-column: span 2; }
+  #input-card .field:nth-of-type(2) { grid-column: span 1; }
+  #input-card .field:nth-of-type(3) { grid-column: span 1; }
+  #input-card .field:nth-of-type(4) { grid-column: span 1; }
+  #input-card .actions { grid-column: 1 / -1; margin-top: 12px; }
+}
+
+@media (min-width: 900px) and (max-width: 1279px) {
+  /* 中等屏幕：6 列网格，字段按 3 / 3 / 3 / 3 排两行，按钮横跨整行 */
+  #input-card { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  #input-card .field:nth-of-type(1) { grid-column: span 3; }
+  #input-card .field:nth-of-type(2) { grid-column: span 3; }
+  #input-card .field:nth-of-type(3) { grid-column: span 3; }
+  #input-card .field:nth-of-type(4) { grid-column: span 3; }
+  #input-card .actions { grid-column: 1 / -1; }
+}
 
 .field label {
   display: block;
@@ -119,17 +515,19 @@ body {
   font-size: 15px;
   font-family: inherit;
   color: var(--ink);
-  background: #fcfcfd;
+  background: var(--surface-3);
   border: 1px solid var(--border);
   border-radius: 10px;
   outline: none;
-  transition: border-color .15s, box-shadow .15s;
+  transition: border-color .15s, box-shadow .15s, background .15s;
 }
+
+.field input::placeholder { color: var(--field-text); }
 
 .field input:focus {
   border-color: var(--brand);
   box-shadow: 0 0 0 3px var(--brand-soft);
-  background: #fff;
+  background: var(--surface);
 }
 
 .field-note {
@@ -171,6 +569,8 @@ body {
   background: var(--brand-soft);
   color: var(--brand);
   border-radius: 999px;
+  /* 新加的城市标签会"弹"出来（app.js 加上 .chip-new 类，动画完自然停在常态） */
+  animation: pop-in var(--dur) var(--ease-spring) both;
 }
 
 .chip button {
@@ -185,33 +585,72 @@ body {
   opacity: .55;
 }
 
-.chip button:hover { opacity: 1; background: rgba(47, 107, 255, .12); }
+.chip button:hover { opacity: 1; background: var(--brand-soft); }
 
 /* ---------- 按钮 ---------- */
 
 .btn {
+  position: relative;
+  overflow: hidden;          /* 流光扫过时裁掉溢出部分 */
   font-family: inherit;
   font-size: 15px;
   border-radius: 10px;
   border: 1px solid transparent;
   padding: 10px 18px;
   cursor: pointer;
-  transition: background .15s, border-color .15s, transform .05s;
+  transition: background .15s, border-color .15s, transform var(--dur-fast),
+              box-shadow .18s, filter .18s;
 }
 
 .btn:active { transform: translateY(1px); }
 
 .btn-primary {
   background: var(--brand);
-  color: #fff;
+  color: var(--on-brand);
   font-weight: 600;
   padding: 11px 26px;
 }
 
-.btn-primary:hover { background: #2559db; }
+/* 主按钮：一层斜向的光缓慢扫过，不再是一块死板的色块。
+   平时每 4.6 秒自己扫一次（静静吸引注意）；鼠标悬浮时立刻扫一次。
+
+   为什么用两套 animation：
+   悬浮时把循环动画换成"扫一次"，动画名字变了浏览器才会重播它。 */
+.btn-primary::after {
+  content: "";
+  position: absolute;
+  top: -60%;
+  left: 0;
+  width: 34%;
+  height: 220%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, .38), transparent);
+  transform: translateX(-120%);
+  pointer-events: none;
+  animation: sweep 4.6s var(--ease) infinite 1.2s;
+}
+
+.btn-primary:hover::after {
+  animation: sweep .72s var(--ease);
+}
+
+/* 主按钮悬浮：用"亮度 + 光晕"而不是写死一个深蓝，
+   这样两套主题下都自然（明亮下变深、赛博下发青光） */
+.btn-primary:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+
+/* 赛博主题下主按钮带一层呼吸光晕，像按下去会通电 */
+[data-theme="cyber"] .btn-primary {
+  box-shadow: 0 0 0 1px rgba(0, 229, 255, .30), 0 0 18px rgba(0, 229, 255, .22);
+}
+
+[data-theme="cyber"] .btn-primary:hover {
+  box-shadow: 0 0 0 1px rgba(0, 229, 255, .55), 0 0 26px rgba(0, 229, 255, .38);
+}
 
 .btn-ghost {
-  background: #fff;
+  background: var(--surface);
   border-color: var(--border);
   color: var(--ink);
   flex: 0 0 auto;
@@ -224,7 +663,7 @@ body {
   color: var(--ink-2);
 }
 
-.btn-quiet:hover { background: #f0f1f4; }
+.btn-quiet:hover { background: var(--hover); }
 
 .actions {
   display: flex;
@@ -233,7 +672,109 @@ body {
   margin-top: 20px;
   padding-top: 18px;
   border-top: 1px solid var(--border);
+  /* 窄屏（没启用网格）时按钮区自己占一整行 */
+  grid-column: 1 / -1;
 }
+
+/* ============================================================
+   纸飞机航线图案（Day 8 追加）
+
+   位置：输入卡片最底下、按钮下面。
+   做法：手写的 SVG（矢量图），不是图片文件，更不是网络图片 ——
+      · 不联网：整张图就是几行代码，断网照常显示（AC14 不受影响）；
+      · 不失真：矢量图放大到任何尺寸都清晰；
+      · 能换皮肤：所有颜色都写 var(--xxx)，跟着主题自动变。
+   它是纯装饰，所以标了 aria-hidden="true"，读屏软件会跳过。
+   动效：纸飞机沿弧线轻轻浮动 + 虚线上有一小段亮光在跑，
+        让人一眼看出"这是一条航线"。
+   ============================================================ */
+
+.route-art {
+  grid-column: 1 / -1;        /* 和按钮一样横跨整行 */
+  margin: 22px 0 2px;
+  /* 尽量大：小屏铺满可用宽度，大屏最多 1180px（再宽就拉稀了） */
+  width: 100%;
+  max-width: 1180px;
+  margin-left: auto;
+  margin-right: auto;
+  color: var(--brand, #2a5fe0);   /* SVG 子元素各写 fill；这里是继承兜底，变量取不到也不发黑 */
+}
+
+.route-art svg {
+  display: block;
+  width: 100%;
+  height: auto;               /* 高度跟着宽度等比缩放 */
+}
+
+/* 三条航线：虚线 + 圆头线帽，看着像航迹图上的线段。
+   兜底色 #2a5fe0 = 明亮主题的主色，和 var(--edge) 在明亮下等价；
+   赛博主题有渐变，会正常覆盖它。 */
+.route-art .route-line {
+  fill: none;
+  stroke: var(--edge, #2a5fe0);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  opacity: .40;
+}
+
+/* 地点圆点：实心 + 一圈"光晕"。
+   ⚠️ 原来只填个色，在浅底上几乎看不见 —— 加上描边才对得上
+      "地图上的城市标记"的印象。 */
+.route-art .route-node {
+  fill: var(--edge, #2a5fe0);
+  stroke: var(--card, #ffffff);
+  stroke-width: 3;
+  opacity: .75;
+}
+
+/* 起点 / 终点：更大、更实，一眼能分出主次 */
+.route-art .route-node.main {
+  opacity: 1;
+  stroke-width: 4;
+}
+
+/* ---- 纸飞机 ----
+   一张纸飞机 = 两片机翼（迎光，浅）+ 一块机身（背光，深）+ 一条折痕。
+   机身和机翼明暗差一档，中间的脊线才立得起来；
+   不这么分层的话，几个面糊成一块，看着就是个箭头。
+
+   颜色：明亮主题下专门用 --plane，不跟按钮的深蓝共用。
+   原因：航线用的是 --edge（主色，偏深的宝蓝），飞机如果也同色，
+   整张图就是"一种蓝深浅不一"，太平；换成更亮更跳的蓝，飞机才跳得出来。
+   赛博主题不动 —— 那边靠整图的 filter 变电子青。
+
+   ⚠️ var() 后面那个逗号值是"兜底色"，非常重要：
+      万一变量因为任何原因取不到（比如样式表版本不一致），
+      fill 会退化成浏览器默认的【黑色】—— 米白底上一只黑飞机，很难看。
+      写上兜底色，最坏情况也只是一只深蓝飞机。 */
+.route-art .pf-wing-a { fill: var(--plane, #1e7cf5); opacity: .34; }
+.route-art .pf-wing-b { fill: var(--plane, #1e7cf5); opacity: .50; }
+.route-art .pf-fus-a  { fill: var(--plane, #1e7cf5); opacity: 1; }
+
+/* 折痕：只是"纸被折过"的一点点暗示，所以细、淡、不封口。
+   ⚠️ 一开始画成白色粗线还带圆头，放大后像贴了根白管子，机头还多个白点 —— 
+      改成半透明的细线、方头收尾，才像折痕。 */
+.route-art .pf-crease {
+  fill: none;
+  stroke: var(--card, #ffffff);
+  stroke-width: 1.1;
+  stroke-linecap: butt;
+  opacity: .55;
+}
+
+/* 三张飞机各自飘，周期和幅度都不一样，显得不是同一个动画在复制 */
+.route-art .plane-a { animation: plane-float-a 7s ease-in-out infinite; }
+.route-art .plane-b { animation: plane-float-b 9s ease-in-out infinite; }
+.route-art .plane-c { animation: plane-float-c 8s ease-in-out infinite; }
+
+/* 赛博主题：整张图转成电子青 + 霓虹光晕，和页面其它部分同一套语言 */
+[data-theme="cyber"] .route-art {
+  color: #00e5ff;
+  filter: drop-shadow(0 0 7px rgba(0, 229, 255, .5));
+}
+
+[data-theme="cyber"] .route-art .route-line { opacity: .58; }
+[data-theme="cyber"] .route-art .route-node { opacity: .85; }
 
 /* ---------- 表格 ---------- */
 
@@ -242,34 +783,60 @@ body {
 .data-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 14.5px;
+  font-size: 15px;
 }
 
 .data-table th,
 .data-table td {
   text-align: left;
-  padding: 10px 12px;
+  padding: 11px 14px;
   border-bottom: 1px solid var(--border);
   vertical-align: top;
 }
 
 .data-table th {
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--ink-2);
-  background: #fafbfc;
+  background: var(--surface-2);
   white-space: nowrap;
 }
+
+/* 鼠标划过整行高亮：大表格看着不容易看串行 */
+.data-table tbody tr:hover td { background: var(--brand-soft); }
 
 .data-table tbody tr:last-child td { border-bottom: 0; }
 
 .data-table td.num,
 .data-table th.num { text-align: right; white-space: nowrap; }
 
+/* 数字列用等宽字体：金额上下对齐，读起来利落（也是"科技感"的来源之一） */
+.data-table td.num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
 .data-table tr.row-total td {
   font-weight: 700;
-  background: #fafbfc;
+  background: var(--surface-2);
   border-top: 2px solid var(--border);
+}
+
+/* 合计那一行金额：放大 + 主色，最该突出的数字一眼就看到 */
+.data-table tr.row-total td.num {
+  font-size: 20px;
+  color: var(--brand);
+  letter-spacing: -.3px;
+}
+
+/* 赛博主题：合计金额带青色微光，像仪表的读数 */
+[data-theme="cyber"] .data-table tr.row-total td.num {
+  animation: text-glow 3s ease-in-out infinite;
+}
+
+/* 费用清单每一行错峰淡入（app.js 设置 animationDelay） */
+.reveal-item {
+  animation: fade-up var(--dur) var(--ease) both;
 }
 
 .data-table tr.row-transit td { color: var(--ink-2); }
@@ -300,20 +867,48 @@ body {
 }
 
 .plan-card {
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   padding: 16px 18px;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: #fcfdff;
-  transition: border-color .15s, box-shadow .15s;
+  background: var(--surface-4);
+  transition: border-color var(--dur), box-shadow var(--dur), background var(--dur),
+              transform var(--dur);
 }
 
-/* 正在查看的那一套：加蓝边 + 淡蓝底，一眼能认出 */
+/* 鼠标划过整张卡：轻轻抬起来 */
+.plan-card:hover { transform: translateY(-2px); }
+
+/* 正在查看的那一套：加品牌色边 + 淡底，一眼能认出 */
 .plan-card.active {
   border-color: var(--brand);
   background: var(--brand-soft);
   box-shadow: 0 0 0 1px var(--brand);
+}
+
+/* 选中的卡片：一道光从左侧扫过，提示"现在是这一套" */
+.plan-card.active::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 38%;
+  height: 100%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, .55), transparent);
+  pointer-events: none;
+  animation: sweep .82s var(--ease);
+}
+
+/* 赛博主题：选中的卡片带青紫渐变边 + 外发光 */
+[data-theme="cyber"] .plan-card.active {
+  box-shadow: 0 0 0 1px rgba(0, 229, 255, .55), 0 0 22px rgba(0, 229, 255, .22);
+}
+
+[data-theme="cyber"] .plan-card.active::after {
+  background: linear-gradient(100deg, transparent, rgba(0, 229, 255, .30), transparent);
 }
 
 .plan-head {
@@ -365,7 +960,7 @@ body {
   margin: 0 0 14px;
   padding: 8px 10px;
   border-radius: 8px;
-  background: #fff;
+  background: var(--surface);
   border: 1px dashed var(--border);
   font-size: 12.5px;
   line-height: 1.7;
@@ -436,7 +1031,7 @@ body {
   gap: 10px;
   padding: 10px 12px;
   margin-bottom: 8px;
-  background: #fafbfc;
+  background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 10px;
   font-size: 14.5px;
@@ -482,12 +1077,12 @@ body {
   white-space: nowrap;
 }
 
-.tag-eat  { background: #fff1e6; color: #b5651d; }
-.tag-play { background: #eaf4ff; color: #2a63c8; }
+.tag-eat  { background: var(--tag-eat-bg); color: var(--tag-eat-fg); }
+.tag-play { background: var(--tag-play-bg); color: var(--tag-play-fg); }
 
 .empty-note {
   padding: 12px 14px;
-  background: #fafbfc;
+  background: var(--surface-2);
   border: 1px dashed var(--border);
   border-radius: 10px;
   font-size: 14px;
@@ -497,7 +1092,7 @@ body {
 .self-add {
   margin-top: 10px;
   padding: 12px 14px;
-  background: #fafbfc;
+  background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 10px;
 }
@@ -515,7 +1110,8 @@ body {
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--surface);
+  color: var(--ink);
   outline: none;
 }
 
@@ -575,7 +1171,7 @@ body {
   margin-top: 32px;
   padding: 22px 0 34px;
   border-top: 1px solid var(--border);
-  background: #fff;
+  background: var(--surface);
   font-size: 13px;
   color: var(--ink-2);
 }
@@ -586,14 +1182,53 @@ body {
 
 /* ---------- 窄屏适配（AC13：不用左右拖动） ---------- */
 
+/* ---------- 顶端进度条 ----------
+   点「生成方案」时滑过一条，给"正在算"的反馈。
+   算得快（几十毫秒），所以它更像一个"有动静"的确认，
+   而不是真的在等——但用户会觉得更踏实。 */
+.progress-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  z-index: 50;
+  transform-origin: left center;
+  transform: scaleX(0);
+  opacity: 0;
+  background: linear-gradient(90deg, var(--brand), #7c5cff);
+  pointer-events: none;
+}
+
+/* app.js 加上 .running 才播动画；动画跑完自己淡出，不占位 */
+.progress-bar.running {
+  animation: bar-run 900ms var(--ease) forwards;
+}
+
+/* 任何屏都不该出现横向滚动条：给页面根加一道保险 */
+html { overflow-x: hidden; }
+
 @media (max-width: 560px) {
   body { font-size: 15px; }
 
-  .site-header { padding: 28px 0 20px; }
+  .site-header { padding: 56px 0 20px; }
   .site-header h1 { font-size: 22px; }
   .tagline { font-size: 15px; }
 
+  /* 手机上把主题按钮提到标题上方，不再绝对定位挡住 h1 */
+  .theme-toggle {
+    position: static;
+    margin: 0 18px 14px;
+    font-size: 12px;
+    padding: 6px 11px;
+  }
+
+  /* 手机上一律单列：四个字段一条条往下排 */
+  #input-card { display: block; }
   .card { padding: 18px 16px 20px; border-radius: 12px; }
+
+  /* 合计金额在手机上缩小一点，避免撑破表格 */
+  .data-table tr.row-total td.num { font-size: 17px; }
 
   .city-picker { flex-wrap: wrap; }
   .city-picker input { flex: 1 1 100%; }
@@ -601,6 +1236,9 @@ body {
 
   .actions { flex-direction: column; align-items: stretch; }
   .actions .btn { width: 100%; }
+
+  /* 纸飞机图案在手机上收窄、贴近按钮一点，免得占掉半屏 */
+  .route-art { margin-top: 16px; margin-bottom: 0; }
 
   .data-table { font-size: 14px; }
   .data-table th, .data-table td { padding: 9px 10px; }
@@ -610,4 +1248,115 @@ body {
   .plan-head { flex-direction: column; align-items: flex-start; gap: 2px; }
 
   .verdict { flex-direction: column; gap: 4px; }
+
+  /* 手机上关掉底纹：小屏上格子太密看着眼晕，也省点电 */
+  [data-theme="cyber"] body { background-image: none; animation: none; }
+
+  /* 手机上也关掉光晕：占地方、也没必要 */
+  html:not([data-theme="cyber"]) .light-glow { display: none; }
 }
+
+/* ============================================================
+   关键帧动画库（Day 8 追加）
+
+   全部集中在这里，方便一处查看、一处调整。
+   规则：只用 transform / opacity / filter，不改尺寸和位置属性。
+   ============================================================ */
+
+/* --- 共用 --- */
+
+/* 从下方 14px 淡入上浮：结果区逐块出现用 */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* 轻轻弹一下：城市标签被添加时用 */
+@keyframes pop-in {
+  0%   { opacity: 0; transform: scale(.72); }
+  62%  { opacity: 1; transform: scale(1.08); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* 一道光从左扫到右：按钮和选中卡片的"流光" */
+@keyframes sweep {
+  from { transform: translateX(-120%); }
+  to   { transform: translateX(320%); }
+}
+
+/* 顶端进度条：从 0 涨到 100% 再淡出 */
+@keyframes bar-run {
+  0%   { transform: scaleX(0);   opacity: 1; }
+  72%  { transform: scaleX(1);   opacity: 1; }
+  100% { transform: scaleX(1);   opacity: 0; }
+}
+
+/* 轻微呼吸（透明度）：用于"还活着"的感觉 */
+@keyframes breathe {
+  from { opacity: .55; }
+  to   { opacity: 1; }
+}
+
+/* --- 明亮主题专用 --- */
+
+/* 标题区的三团柔光各自漂移，三个方向不同，显得随机、不生硬 */
+@keyframes drift-a {
+  from { transform: translate(0, 0) scale(1); }
+  to   { transform: translate(70px, 40px) scale(1.14); }
+}
+
+@keyframes drift-b {
+  from { transform: translate(0, 0) scale(1.06); }
+  to   { transform: translate(-60px, 52px) scale(.94); }
+}
+
+@keyframes drift-c {
+  from { transform: translate(0, 0) scale(.94); }
+  to   { transform: translate(44px, 64px) scale(1.12); }
+}
+
+/* --- 纸飞机航线（Day 8 追加） --- */
+
+/* 三张纸飞机各自沿一个小范围飘动，像被风托着。
+   三组周期和方向都不同，是为了不让它们"一起齐步走"。 */
+@keyframes plane-float-a {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  50%      { transform: translate(-16px, -13px) rotate(-3.5deg); }
+}
+
+@keyframes plane-float-b {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  50%      { transform: translate(13px, 11px) rotate(3deg); }
+}
+
+@keyframes plane-float-c {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  50%      { transform: translate(-9px, 14px) rotate(2.5deg); }
+}
+
+/* --- 赛博主题专用 --- */
+
+/* 网格往上流一格，接上时看不出接缝，像电路在通电 */
+@keyframes grid-flow {
+  from { background-position: 0 0, 0 0; }
+  to   { background-position: 0 -44px, -44px 0; }
+}
+
+/* 霓虹线左右呼吸 */
+@keyframes neon-breathe {
+  0%, 100% { opacity: .55; filter: saturate(1); }
+  50%      { opacity: 1;   filter: saturate(1.5) brightness(1.22); }
+}
+
+/* 卡片青色光晕脉冲 */
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: var(--shadow); }
+  50%      { box-shadow: var(--shadow), 0 0 0 1px rgba(0, 229, 255, .18); }
+}
+
+/* 文字带一点青色微光晃动（金额、标题用） */
+@keyframes text-glow {
+  0%, 100% { text-shadow: 0 0 10px rgba(0, 229, 255, .30); }
+  50%      { text-shadow: 0 0 18px rgba(0, 229, 255, .62); }
+}
+
