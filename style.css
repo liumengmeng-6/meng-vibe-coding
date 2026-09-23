@@ -415,6 +415,165 @@ main, .page-main { flex: 1 0 auto; }
 #block-budget::after    { background: #cf5a86; }
 #block-highlights::after{ background: #3f9ad6; }
 
+/* ---------- 空状态（Day 8 第 2 周新增） ----------
+   还没点过「生成方案」时显示。和加载中一样用居中布局，
+   但它是"常态"不是"过渡态"，所以留白比加载中宽一点、语气更引导性。 */
+.empty-card {
+  /* 空卡片不做悬浮抬升 —— 它里面没有可点的东西，浮起来会误导 */
+  pointer-events: none;
+}
+
+.empty-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 46px 24px 50px;
+}
+
+.empty-art {
+  display: block;
+  width: 150px;
+  height: auto;
+  margin-bottom: 22px;
+  opacity: .9;
+  color: #1e7cf5;                 /* 给 SVG 一个基准色 */
+}
+
+/* 虚线轨迹 + 两个端点：和首页那张纸飞机图案是同一种语言 */
+.empty-art .ea-line { opacity: .38; }
+.empty-art .ea-dot  { opacity: .7; }
+
+/* 小纸飞机轻轻飘一下 —— 空状态唯一的动效，不喧闹 */
+.empty-art .ea-plane {
+  animation: plane-float-a 7s ease-in-out infinite;
+  transform-origin: 61px 16px;
+}
+/* 第二个面（背光那面）单独延迟，避免两个面完全同步显得假 */
+.empty-art .ea-plane + .ea-plane {
+  animation-duration: 8.4s;
+}
+
+.empty-title {
+  margin: 0 0 10px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.empty-text {
+  margin: 0;
+  max-width: 430px;
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--ink-2);
+}
+
+.empty-hint {
+  margin: 14px 0 0;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+/* 赛博主题：线条和飞机转成电子青，加一点霓虹光晕 */
+[data-theme="cyber"] .empty-art {
+  color: #00e5ff;
+  filter: drop-shadow(0 0 6px rgba(0, 229, 255, .4));
+}
+
+/* 系统开了「减少动态效果」→ 飞机别飘 */
+@media (prefers-reduced-motion: reduce) {
+  .empty-art .ea-plane { animation: none !important; }
+}
+
+/* 手机端：图小一号、留白收窄 */
+@media (max-width: 560px) {
+  .empty-box { padding: 34px 18px 38px; }
+  .empty-art { width: 118px; margin-bottom: 18px; }
+  .empty-title { font-size: 16px; }
+  .empty-text { font-size: 13px; line-height: 1.7; }
+  .empty-hint { font-size: 12px; }
+}
+
+/* ---------- 加载中状态（Day 8 第 2 周新增） ----------
+   一个转圈 + 两行说明。为什么是转圈不是骨架屏：
+   结果区有六块、每块形状都不一样，画骨架屏要画六套，不值当；
+   转圈一个元素通用，而且这块地方加载完就整块消失（不留位置），
+   所以"从转圈变成六块结果"的视觉跳跃可以接受。 */
+.loading-card {
+  /* 转圈时整块卡片不做悬浮抬升，免得看着像可点的东西 */
+  pointer-events: none;
+}
+
+.loading-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 13px;
+  padding: 46px 20px 50px;
+  text-align: center;
+}
+
+/* 转圈本体：一个圆环，只有顶边有颜色 —— 旋转起来就是"进度在跑"的观感 */
+.spinner {
+  display: block;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 3px solid var(--border);
+  border-top-color: var(--brand);
+  animation: spin .78s linear infinite;
+  /* 兜底色：万一变量取不到，至少还是个看得见的灰圈 */
+  border-color: #e8e1d6;
+  border-top-color: #2a5fe0;
+}
+
+.loading-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.loading-sub {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-3);
+  max-width: 380px;
+  line-height: 1.6;
+}
+
+/* 赛博主题：转圈换成电子青，和整页的霓虹语言一致 */
+[data-theme="cyber"] .spinner {
+  border-color: #1e2a3d;
+  border-top-color: #00e5ff;
+  filter: drop-shadow(0 0 6px rgba(0, 229, 255, .45));
+}
+
+/* 关键帧：只转 transform，不动 width/height（性能） */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* 系统开了「减少动态效果」→ 转圈别转，改成让圆环缓慢明暗呼吸，
+   既保留"正在忙"的提示，又不会有持续旋转的动感。 */
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: breathe 1.4s ease-in-out infinite !important;
+  }
+}
+
+/* 手机端：转圈小一号，上下留白收窄，别把首屏占满 */
+@media (max-width: 560px) {
+  .loading-box { padding: 34px 16px 38px; gap: 11px; }
+  .spinner { width: 30px; height: 30px; border-width: 3px; }
+  .loading-title { font-size: 14px; }
+  .loading-sub { font-size: 12px; }
+}
+
 /* 鼠标移上去轻轻浮起来 —— 让卡片有"层"，不再平贴背景 */
 .card:hover {
   box-shadow: var(--shadow-lift);

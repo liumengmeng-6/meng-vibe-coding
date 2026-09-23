@@ -10,7 +10,7 @@
        不加的话，浏览器会把旧的 CSS 存在本地反复用，
        结果就是"我明明改了样式，你打开却没变化"。
        注意：这仍然只是本地文件，不联网，离线照常可用。 -->
-  <link rel="stylesheet" href="style.css?v=20260923h">
+  <link rel="stylesheet" href="style.css?v=20260923j">
 
   <!-- 主题抢先应用：必须在 <body> 画出来之前执行，
        否则选了赛博主题的人刷新时会先闪一下白屏再变黑（很难受）。
@@ -170,8 +170,57 @@
       </div>
     </section>
 
-    <!-- ③ 结果区：点「生成方案」之前完全不显示 -->
-    <section id="result-area" hidden>
+    <!-- ③ 结果区。四种状态里它同时装着三种（空 / 加载中 / 正常），
+           靠"哪一块可见"来切换：
+             空     → #block-empty 可见，其余全部 hidden（页面一打开的默认样子）
+             加载中 → #block-loading 可见
+             正常   → 下面六块可见
+             错误   → 字段下方红字提示，结果区退回"空" -->
+    <section id="result-area">
+
+      <!-- 空状态（Day 8 第 2 周新增）：还没点过「生成方案」时的样子。
+           为什么要有它 —— 原来这里是彻底不显示的，用户打开页面往下看是空的，
+           不知道该干什么。空状态的价值是"告诉人下一步做什么"，不只是占位。 -->
+      <div class="card empty-card" id="block-empty">
+        <div class="empty-box">
+          <svg class="empty-art" viewBox="0 0 120 72" aria-hidden="true" focusable="false">
+            <path class="ea-line" fill="none" stroke="#2a5fe0" stroke-width="2.2"
+                  stroke-linecap="round" stroke-dasharray="7 8"
+                  d="M12 54 C 40 54, 48 22, 74 22 S 100 30, 108 26"></path>
+            <!-- 圆点描边色用卡片底色（--card 的兜底值），
+                 这样圆点压在虚线上时有一圈"留白"，不会糊成一坨 -->
+            <circle class="ea-dot" fill="#2a5fe0" stroke="#ffffff" stroke-width="3"
+                    cx="12" cy="54" r="4.5"></circle>
+            <circle class="ea-dot" fill="#2a5fe0" stroke="#ffffff" stroke-width="3"
+                    cx="108" cy="26" r="4.5"></circle>
+            <!-- 纸飞机：按首页那张图案的同一套画法（三面 + 折痕），
+                 只画两个三角形会变成箭头，这是上次踩过的坑 -->
+            <g class="ea-plane" transform="translate(56 6) scale(0.62) rotate(-8)">
+              <path class="ea-w1" fill="#1e7cf5" opacity="0.34" d="M58 15 L40 37 L19 21 Z"></path>
+              <path class="ea-w2" fill="#1e7cf5" opacity="0.50" d="M58 15 L40 37 L30 25 Z"></path>
+              <path class="ea-b"  fill="#1e7cf5" d="M58 15 L24 42 L40 37 Z"></path>
+              <path class="ea-c"  fill="none" stroke="#faf7f2" stroke-width="1.1"
+                    stroke-linecap="butt" opacity="0.55" d="M58 15 L40 37"></path>
+            </g>
+          </svg>
+          <p class="empty-title">还没生成行程</p>
+          <p class="empty-text">在上面填好<b>出发城市</b>、<b>想去的城市</b>和<b>天数</b>，
+            点「生成方案」就会排出几套预算内的行程，并把吃住行玩各花多少钱都算清楚。</p>
+          <p class="empty-hint">预算可以留空 —— 不设预算也能正常用。</p>
+        </div>
+      </div>
+
+      <!-- 加载中（Day 8 第 2 周新增）：点按钮后先显示这个，算完再换成下面六块。
+           为什么要有它 —— 现在纯本地计算几乎瞬间出结果，看不出需要；
+           但第 3 周接真实接口后，网络要等几百毫秒到几秒，
+           没有这个状态用户会以为页面卡死了、反复点按钮。 -->
+      <div class="card loading-card" id="block-loading" hidden>
+        <div class="loading-box" role="status" aria-live="polite">
+          <span class="spinner" aria-hidden="true"></span>
+          <p class="loading-title">正在为你排行程…</p>
+          <p class="loading-sub">正在比较几种交通方式的组合，算清吃住行玩的总账</p>
+        </div>
+      </div>
 
       <div class="card" id="block-plans" hidden>
         <h2 class="card-title">① 整体方案对比</h2>
@@ -244,7 +293,7 @@
 
   <!-- 逻辑脚本：必须是普通 script（不能用 type="module"），否则双击打开时不会执行。
        末尾的 ?v= 是版本号，作用同上面的 style.css：改了脚本你才看得到变化。 -->
-  <script src="app.js?v=20260923h" defer></script>
+  <script src="app.js?v=20260923j" defer></script>
 
 </body>
 </html>

@@ -1727,8 +1727,10 @@ function addCity() {
 function generate() {
   clearErrors();
 
-  // 先把上次的结果收起来，避免"新输入 + 旧结果"混在一起看
-  document.getElementById('result-area').hidden = true;
+  /* 先把上次的结果收起来（回到"空"状态），避免"新输入 + 旧结果"混在一起看。
+     注意：结果区本身【不再整体隐藏】—— 它现在一开始就可见，
+     里面装着空状态；生成过程中换成转圈、生成完换成六块结果。 */
+  showEmpty();
 
   var input = readInput();
   var errors = validateInput(input);
@@ -1738,12 +1740,27 @@ function generate() {
     return;   // 有任何一项不过 → 不生成半成品（PRD F2）
   }
 
+  /* 校验都过了才开始加载 + 干活。
+     注意顺序很关键：加载态放在校验【之后】——
+     要是先转圈再报错，用户会看到"圈转了一下又说输入不对"，很怪。 */
+  var token = showLoading();
+  runProgressBar();
+
+  /* 给浏览器一帧时间把"转圈"画出来，再去跑同步计算。
+     不这么做的话：计算是同步的，浏览器会等函数全部跑完才重绘，
+     结果是"转圈根本没出现过"直接跳到结果。 */
+  setTimeout(function () {
+    if (!isCurrentRun(token)) { return; }   // 期间被清空或被新任务顶掉 → 作废
+    doGenerate(input, token);
+  }, 0);
+}
+
+/* 真正的计算 + 渲染。从 generate 里拆出来，就是为了让加载态能先画到屏幕上。 */
+function doGenerate(input, token) {
+  var startedAt = Date.now();
+
   var fromCity = input.fromCity.trim();
   input.fromCity = fromCity;
-
-  /* 校验都过了，才开始"干活"的视觉反馈：
-     顶端滑过一条进度条。它不阻塞任何计算，只是个看得见的动静。 */
-  runProgressBar();
 
   // F2 固定顺序：校验 → 组合整体方案 → 排交通 → 算总账 → 比预算 → 出清单
   var plans = buildPlans(input);
@@ -1752,6 +1769,9 @@ function generate() {
   if (plans.length === 0) {
     var single = splitDays(fromCity, input.cities, input.days);
     if (!single.ok) {
+      // 出错了：收掉转圈和按钮锁，退回"空"状态 + 字段下方红字提示
+      hideLoading();
+      showEmpty();
       showErrors({ days: single.message });
       return;
     }
@@ -1794,16 +1814,140 @@ function generate() {
   renderBudget(verdict);
   renderHighlights(input.cities);
 
-  // 显示结果区 + 逐块显示
-  document.getElementById('result-area').hidden = false;
+  /* 计算其实早就跑完了（本地计算是毫秒级）。
+     但转圈不能"闪一下就没" —— 那样比不显示还难看。
+     所以补足到 LOADING_MIN_MS 再揭晓结果。
+     第 3 周接真实接口后，这里等待的就是真实网络耗时，逻辑不用改。 */
+  var elapsed = Date.now() - startedAt;
+  var wait = Math.max(0, LOADING_MIN_MS - elapsed);
 
-  /* 六块内容错峰淡入：每块比上一块晚 70 毫秒出现，
-     看起来是"依次滑入"而不是"啪一下全冒出来"。
+  setTimeout(function () {
+    /* 关键：如果这 400 毫秒里用户点了「清空重填」或又点了一次生成，
+       我这个回调就过期了 —— 直接作废，绝不能把结果画到已经变干净的界面上。 */
+    if (!isCurrentRun(token)) { return; }
+
+    hideLoading();
+
+    /* 切到「正常」状态：收掉空状态，六块错峰淡入。
+       revealBlocks 内部会把六块逐个 hidden=false，所以这里不用再管结果区本身
+       （结果区现在一直是可见的，切换的是里面哪一块可见）。 */
+    document.getElementById('block-empty').hidden = true;
+    revealBlocks();
+
+    // 按顺序执行完，滚到结果那儿（否则用户不知道下面出东西了）
+    // 加一层判断：极老的浏览器可能没有这个 API，不该因此让整个生成失败
+    var resultArea = document.getElementById('result-area');
+    if (resultArea.scrollIntoView) {
+      resultArea.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, wait);
+}
+
+/* ---------- E. 加载中 / 空 / 正常 三种状态的切换 ----------
+   项目里目前有四种页面状态：
+     ① 正常   —— 六块结果都算出来了
+     ② 加载中 —— 正在算的时候（本函数新加）
+     ③ 空     —— 还没点过「生成方案」，结果区整个不显示
+     ④ 错误   —— 输入不合格，字段下方红字提示（E1–E5）
+
+   加载中为什么要做得这么"郑重"：
+   现在全是本地计算，几十毫秒就完事，说实话看不出它的必要。
+   但第 3 周一旦接真实接口，网络要等几百毫秒到几秒 ——
+   那时要是没有加载状态，用户会以为页面卡死了，然后反复点按钮。
+   所以现在先把这个"位置"留出来，将来只换数据来源，界面不用返工。 */
+
+/* 结果区的六块。定义在这里（而不是函数内部），
+   因为"加载时收起"、"加载完错峰淡入"两个地方都要用它。 */
+var BLOCK_IDS = ['block-plans', 'block-itinerary', 'block-transport',
+                 'block-cost', 'block-budget', 'block-highlights'];
+
+/* 加载中至少显示多久。太短了转圈会"闪一下"，比不显示还难看。
+   400 毫秒：短到不烦人，长到能看清。 */
+var LOADING_MIN_MS = 400;
+
+/* 本次任务的编号。
+   为什么需要它 —— 加载是把揭晓动作放在 setTimeout 里的，
+   如果用户在这 400 毫秒里点了"清空重填"、或者又点了一次生成，
+   那个迟到的 setTimeout 照样会跑，把已经作废的结果画到屏幕上。
+   编号对不上就自己作废，这是异步代码里最省事的"防迟到"手段。 */
+var runToken = 0;
+
+/* 把结果区里所有内容块收起来（六块结果 + 转圈 + 空状态）。
+   三种状态互相切换时，第一步都是"先全部藏掉，再显示该显示的那个"，
+   这样不会出现两个状态同时可见的中间态。 */
+function hideAllBlocks() {
+  BLOCK_IDS.forEach(function (id) {
+    document.getElementById(id).hidden = true;
+  });
+  document.getElementById('block-loading').hidden = true;
+  document.getElementById('block-empty').hidden = true;
+}
+
+/* 切到「空」状态：还没生成过、或者刚被清空 / 输入不合格。 */
+function showEmpty() {
+  hideAllBlocks();
+  document.getElementById('result-area').hidden = false;
+  document.getElementById('block-empty').hidden = false;
+}
+
+function showLoading() {
+  runToken++;                 // 发一个本次任务的编号
+  var myToken = runToken;
+
+  var area = document.getElementById('result-area');
+  area.hidden = false;
+
+  // 六块结果 + 空状态全部收起来：转圈期间界面只留转圈，干净
+  hideAllBlocks();
+  document.getElementById('block-loading').hidden = false;
+
+  // 按钮锁住：加载期间点不动，且文字改成"生成中…"
+  var btn = document.getElementById('btn-generate');
+  btn.disabled = true;
+  // 只在按钮当前不是"生成中…"时才记原文案 ——
+  // 否则连点时第二次会把"生成中…"记成原文案，以后就再也回不去了
+  if (btn.textContent !== '生成中…') {
+    btn.dataset.originalText = btn.textContent;
+  }
+  btn.textContent = '生成中…';
+
+  // 把转圈那块滚进视野，否则用户不知道下面有动静
+  var loadingCard = document.getElementById('block-loading');
+  if (loadingCard.scrollIntoView) {
+    loadingCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  return myToken;             // 交回编号，后面用来判断"我还算不算数"
+}
+
+/* 判断某个任务是否还有效（期间没被清空 / 没被新任务顶掉） */
+function isCurrentRun(token) {
+  return token === runToken;
+}
+
+function hideLoading() {
+  document.getElementById('block-loading').hidden = true;
+
+  var btn = document.getElementById('btn-generate');
+  btn.disabled = false;
+  // 恢复按钮原文案（读回存在 dataset 里的，不写死字符串）
+  if (btn.dataset.originalText) {
+    btn.textContent = btn.dataset.originalText;
+  }
+}
+
+/* 清空重填时调：把当前任务作废（让迟到的回调失效），收掉加载态，回到空状态 */
+function cancelRunning() {
+  runToken++;                 // 编号前进 → 所有在途任务全部作废
+  hideLoading();
+  showEmpty();
+}
+
+/* 六块结果错峰淡入。抽成函数是因为"加载完成后"和"切换方案时"都要用到。 */
+function revealBlocks() {
+  /* 每块比上一块晚 70 毫秒出现，看起来是"依次滑入"而不是"啪一下全冒出来"。
      用 CSS 动画（见 style.css 的 fade-up + .reveal 类），
      这里只负责把类加上、并清掉上一次的延迟，避免第二次生成时累积。 */
-  var BLOCK_IDS = ['block-plans', 'block-itinerary', 'block-transport',
-                   'block-cost', 'block-budget', 'block-highlights'];
-
   BLOCK_IDS.forEach(function (id, i) {
     var el = document.getElementById(id);
     el.hidden = false;
@@ -1814,16 +1958,9 @@ function generate() {
     el.style.animationDelay = (i * 70) + 'ms';
     el.classList.add('reveal');
   });
-
-  // 按顺序执行完，滚到结果那儿（否则用户不知道下面出东西了）
-  // 加一层判断：极老的浏览器可能没有这个 API，不该因此让整个生成失败
-  var resultArea = document.getElementById('result-area');
-  if (resultArea.scrollIntoView) {
-    resultArea.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
 }
 
-/* ---------- E. 初始化 ---------- */
+/* ---------- F. 初始化 ---------- */
 
 function initApp() {
   document.getElementById('btn-generate').addEventListener('click', generate);
@@ -1853,8 +1990,11 @@ function initApp() {
     lastInput = null;
     activePlanId = null;
     clearErrors();
+    /* 万一是在"加载中"点的清空：转圈和按钮锁都要收掉，
+       并且把在途的任务作废 —— 否则那个迟到的回调会把结果画到清空后的界面上。
+       cancelRunning 内部已经会把结果区切回"空状态"。 */
+    cancelRunning();
     renderCityChips();
-    document.getElementById('result-area').hidden = true;
     document.getElementById('from-city').focus();
   });
 
@@ -1862,6 +2002,11 @@ function initApp() {
 
   // 读回上次存的自填地点（localStorage），这样刷新页面后自己加的地点还在
   loadSelfAdded();
+
+  /* 一开始就显示"空状态"—— 打开页面就能看到"该怎么用"的引导，
+     而不是往下翻一片空白。这也是"四种页面状态"里最容易漏掉的那个：
+     空状态不是没有状态，它本身就是一种要给用户看的状态。 */
+  showEmpty();
 
   // 主题按钮：注意它【不受"清空重填"影响】——
   // 主题是长期偏好，跟本次填的城市天数不是一回事，所以不放进上面那个 reset 里。
