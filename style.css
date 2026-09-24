@@ -59,6 +59,15 @@
   --tag-play-bg: #e6effc;
   --tag-play-fg: #24589c;
 
+  /* 「第 N 天」果冻胶囊（Day 9 追加）：淡蓝 → 淡紫渐变，通透得像果冻 */
+  --pill-a: #eef3ff;         /* 顶部：最亮 */
+  --pill-b: #e6e6fb;         /* 中段 */
+  --pill-c: #e2e5f7;         /* 底部：略沉，撑出立体感 */
+  --pill-ink: #24589c;       /* 字色 */
+  --pill-edge: #ccd8f5;      /* 描边 */
+  --pill-hi: #ffffff;        /* 顶部内高光 */
+  --pill-sh: rgba(42, 95, 224, .13);  /* 悬浮投影 */
+
   /* 方案卡被选中时的高亮边 */
   --on-brand: #ffffff;       /* 主按钮上的文字色 */
 
@@ -114,6 +123,16 @@
   --tag-eat-fg: #ffa463;
   --tag-play-bg: #0d2333;
   --tag-play-fg: #4fc3ff;
+
+  /* 「第 N 天」果冻胶囊（Day 9 追加）：深底上不能沿用浅色渐变，
+     换成"青 → 紫"的暗色玻璃感 —— 跟赛博主题的霓虹调子一致 */
+  --pill-a: #14263a;         /* 顶部：稍亮，模拟反光 */
+  --pill-b: #17203a;         /* 中段 */
+  --pill-c: #1a1f3a;         /* 底部 */
+  --pill-ink: #7fe8ff;       /* 字色：电子青 */
+  --pill-edge: #24455f;      /* 描边 */
+  --pill-hi: rgba(0, 229, 255, .22);  /* 顶部内高光：青色微光 */
+  --pill-sh: rgba(0, 0, 0, .55);      /* 深底上的投影 */
 
   --on-brand: #04121a;
 
@@ -939,6 +958,30 @@ main, .page-main { flex: 1 0 auto; }
 
 .table-scroll { overflow-x: auto; }
 
+/* 窄屏时表格要左右滚 —— 滚动条美化（Day 9 追加）
+   不美化的话，Windows 上是一根又粗又亮灰色的原生条，
+   压在一张精心做的卡片里很"露怯"。
+   · 用 var(--xxx, 兜底色)：变量取不到时也有正确颜色，不会变黑（沿用 Day 8 的三层防线）
+   · Firefox 用 scrollbar-width / scrollbar-color，不支持伪元素
+   · 触屏（hover: none）本来就看不到滚动条，不额外处理 */
+.table-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border, #e8e1d6) transparent;
+}
+.table-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+.table-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.table-scroll::-webkit-scrollbar-thumb {
+  background: var(--border, #e8e1d6);
+  border-radius: 999px;
+}
+.table-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-3, #6a6459);
+}
+
 .data-table {
   width: 100%;
   border-collapse: collapse;
@@ -975,6 +1018,87 @@ main, .page-main { flex: 1 0 auto; }
   font-feature-settings: "tnum" 1;
 }
 
+/* ---------- 「第 N 天」果冻胶囊（Day 9 追加） ----------
+   需求原话是"果冻悬浮包围住字"。果冻感不是一个属性做出来的，是四件事叠的：
+     ① 胶囊底   —— 圆角 + 淡渐变，把字"包围"起来
+     ② 内高光   —— 顶部一条更亮的细高光，像果冻表面的反光
+     ③ 悬浮感   —— 极轻的投影 + 底部一条略深的边，像软糖浮着
+     ④ 落停回弹 —— 载入时轻微放大回弹，像果冻颤了一下
+   三条必须守住的规矩：
+     · 只作用于「每日行程」表的第 1 列（.col-day），不碰交通表 —— 那张表第一列是
+       「✓ 本方案选用」，套胶囊会变得莫名其妙
+     · span 用 inline-block：宽度跟着字走。若直接给 td 上色，td 被拉满整列宽，
+       胶囊就变成"一条横杠"了
+     · 第 1 列定宽 92px：这样"第 1 天"和"第 12 天"占的宽度一样，
+       天数变多时后面的列不会被挤得来回跳
+   ---------------------------------------------------------- */
+
+.data-table td.col-day {
+  width: 92px;
+  white-space: nowrap;
+}
+
+.day-pill {
+  display: inline-block;
+  padding: 5px 13px;
+  border-radius: 999px;          /* 999px = 完全圆角，也就是胶囊形 */
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: .2px;
+  line-height: 1.35;
+  /* 淡蓝 → 淡紫渐变：果冻的"通透感"来源。
+     var() 全部带兜底 —— 变量取不到时也有正确颜色，不会退化成透明/黑色（Day 8 的教训） */
+  background: linear-gradient(180deg,
+              var(--pill-a, #eef3ff) 0%,
+              var(--pill-b, #e6e6fb) 62%,
+              var(--pill-c, #e2e5f7) 100%);
+  color: var(--pill-ink, #24589c);
+  border: 1px solid var(--pill-edge, #ccd8f5);
+  box-shadow:
+    inset 0 1px 0 var(--pill-hi, #ffffff),      /* ② 顶部内高光 */
+    0 1px 2px var(--pill-sh, rgba(42, 95, 224, .13));  /* ③ 悬浮投影 */
+  transition: transform .18s var(--ease-spring, cubic-bezier(.34, 1.42, .5, 1)),
+              box-shadow .18s var(--ease, cubic-bezier(.22, .68, .32, 1));
+}
+
+/* ③ 悬浮感加强：鼠标划过整行时（行高亮由 tbody tr:hover 触发），胶囊轻轻抬一下 */
+.data-table tbody tr:hover .day-pill {
+  transform: translateY(-1px) scale(1.03);
+  box-shadow:
+    inset 0 1px 0 var(--pill-hi, #ffffff),
+    0 3px 7px var(--pill-sh, rgba(42, 95, 224, .18));
+}
+
+/* ④ 落停回弹：结果淡入到这一行时，胶囊轻轻"颤"一下 */
+.reveal-item .day-pill {
+  animation: jelly-drop .5s var(--ease-spring, cubic-bezier(.34, 1.42, .5, 1)) both;
+}
+
+@keyframes jelly-drop {
+  0%   { transform: scale(.86); opacity: 0; }
+  55%  { transform: scale(1.06); opacity: 1; }
+  78%  { transform: scale(.98); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* 无预算 / 无结果时空着的第一列不套胶囊（那时日期没意义） */
+.data-table td.col-day:empty { background: none; }
+
+/* 系统开了"减少动态效果"→ 所有动画归零（无障碍要求，全站一贯做法） */
+@media (prefers-reduced-motion: reduce) {
+  .day-pill,
+  .data-table tbody tr:hover .day-pill { transition: none !important; }
+  .reveal-item .day-pill { animation: none !important; }
+}
+
+/* 窄屏：胶囊收紧一点，否则定宽 92px 会占掉太多横向空间 */
+@media (max-width: 560px) {
+  .data-table td.col-day { width: 76px; }
+  .day-pill { padding: 4px 10px; font-size: 12px; letter-spacing: 0; }
+}
+
+
+
 .data-table tr.row-total td {
   font-weight: 700;
   background: var(--surface-2);
@@ -991,6 +1115,20 @@ main, .page-main { flex: 1 0 auto; }
 /* 赛博主题：合计金额带青色微光，像仪表的读数 */
 [data-theme="cyber"] .data-table tr.row-total td.num {
   animation: text-glow 3s ease-in-out infinite;
+}
+
+/* 赛博主题的果冻胶囊：加一层淡淡的青色外发光，像通着电的软糖 */
+[data-theme="cyber"] .day-pill {
+  box-shadow:
+    inset 0 1px 0 var(--pill-hi, rgba(0, 229, 255, .22)),
+    0 1px 3px var(--pill-sh, rgba(0, 0, 0, .55)),
+    0 0 10px rgba(0, 229, 255, .10);
+}
+[data-theme="cyber"] .data-table tbody tr:hover .day-pill {
+  box-shadow:
+    inset 0 1px 0 var(--pill-hi, rgba(0, 229, 255, .22)),
+    0 3px 9px var(--pill-sh, rgba(0, 0, 0, .6)),
+    0 0 14px rgba(0, 229, 255, .20);
 }
 
 /* 费用清单每一行错峰淡入（app.js 设置 animationDelay） */

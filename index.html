@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>出行规划小助手｜预算内最合适的行程</title>
 
-  <!-- 后面的 ?v=20260923h 是"版本号"，不是路径。
+  <!-- 后面的 ?v=20260924b 是"版本号"，不是路径。
        作用：强迫浏览器在样式更新后重新下载 style.css。
        不加的话，浏览器会把旧的 CSS 存在本地反复用，
        结果就是"我明明改了样式，你打开却没变化"。
        注意：这仍然只是本地文件，不联网，离线照常可用。 -->
-  <link rel="stylesheet" href="style.css?v=20260923j">
+  <link rel="stylesheet" href="style.css?v=20260924b">
 
   <!-- 主题抢先应用：必须在 <body> 画出来之前执行，
        否则选了赛博主题的人刷新时会先闪一下白屏再变黑（很难受）。
@@ -234,7 +234,7 @@
         <div class="table-scroll">
           <table class="data-table" id="table-itinerary">
             <thead>
-              <tr><th>天数</th><th>城市</th><th>当天大致安排</th><th>当天花费估算</th></tr>
+              <tr><th>天数</th><th>城市</th><th>当天大致安排</th><th class="num">当天花费估算</th></tr>
             </thead>
             <tbody></tbody>
           </table>
@@ -248,7 +248,7 @@
         <div class="table-scroll">
           <table class="data-table" id="table-transport">
             <thead>
-              <tr><th>本方案选用</th><th>方式</th><th>耗时</th><th>单人票价</th><th>说明</th></tr>
+              <tr><th>本方案选用</th><th>方式</th><th class="num">耗时</th><th class="num">单人票价</th><th>说明</th></tr>
             </thead>
             <tbody></tbody>
           </table>
@@ -261,7 +261,7 @@
         <div class="table-scroll">
           <table class="data-table" id="table-cost">
             <thead>
-              <tr><th>项目</th><th>计算口径</th><th>金额</th></tr>
+              <tr><th>项目</th><th>计算口径</th><th class="num">金额</th></tr>
             </thead>
             <tbody></tbody>
           </table>
@@ -293,7 +293,7 @@
 
   <!-- 逻辑脚本：必须是普通 script（不能用 type="module"），否则双击打开时不会执行。
        末尾的 ?v= 是版本号，作用同上面的 style.css：改了脚本你才看得到变化。 -->
-  <script src="app.js?v=20260923j" defer></script>
+  <script src="app.js?v=20260924b" defer></script>
 
 </body>
 </html>

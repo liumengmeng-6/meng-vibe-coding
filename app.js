@@ -955,7 +955,16 @@ function renderItinerary(split, input) {
     if (row.hasSelf) tr.classList.add('row-has-self');
 
     var td1 = document.createElement('td');
-    td1.textContent = '第 ' + (r + 1) + ' 天';
+    td1.className = 'col-day';
+    /* 「第 N 天」外面套一个胶囊 span（Day 9 追加）。
+       为什么不用 innerHTML —— 保持本项目一贯做法：一律 createElement，
+       不拼字符串，省得以后往里面放用户输入的时候埋下 XSS 的坑。
+       为什么套 span 而不是直接给 td 上色 —— td 会被拉满整列宽度，
+       胶囊就会变成"一条横杠"；套个 inline-block 的 span，宽度才跟着字走。 */
+    var dayPill = document.createElement('span');
+    dayPill.className = 'day-pill';
+    dayPill.textContent = '第 ' + (r + 1) + ' 天';
+    td1.appendChild(dayPill);
 
     var td2 = document.createElement('td');
     td2.textContent = row.label;
@@ -1026,6 +1035,9 @@ function renderTransport(split, chosenKeys) {
       td2.textContent = o.mode + markTxt;
 
       var td3 = document.createElement('td');
+      // 「耗时」也是个数字列：跟「票价」一样右对齐，
+      //   否则表头「耗时」和「单人票价」一个左一个右，两个数字列自己就不齐
+      td3.className = 'num';
       td3.textContent = '约 ' + o.hours + ' 小时';
 
       var td4 = document.createElement('td');
