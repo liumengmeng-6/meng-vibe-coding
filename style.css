@@ -1738,6 +1738,96 @@ html { overflow-x: hidden; }
 .more-list[hidden],
 .more-why[hidden] { display: none; }
 
+/* ============================================================
+   美食清单的筛选栏（Day 12）
+   ============================================================ */
+
+/* 一整条：标签 + 三个档位 + 右侧条数 */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.filter-label {
+  font-size: 13.5px;
+  color: var(--ink-3);
+}
+
+/* 三个档位按钮。
+   未选中 = 空心（透明/浅底 + 边框）；选中 = 实心（主色填充）。
+   ⚠️ 刻意做成"空心 → 实心"，而不是"浅一点 → 深一点"：
+      只靠颜色深浅的话，色弱用户分不出来 —— 填充状态的变化才是谁都看得见的。 */
+.filter-btn {
+  font: inherit;
+  font-size: 13.5px;
+  line-height: 1.4;
+  padding: 5px 16px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease),
+              color var(--dur-fast) var(--ease),
+              border-color var(--dur-fast) var(--ease),
+              transform var(--dur-fast) var(--ease);
+}
+
+.filter-btn:hover {
+  background: var(--hover);
+  color: var(--ink);
+  border-color: var(--ink-3);
+}
+
+/* 选中态放在 :hover 后面 —— 特异性一样时后写的赢，
+   否则"选中的那一档"一悬停就被 hover 的浅底盖掉了 */
+.filter-btn.is-on {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: var(--on-brand);   /* 两套主题各有一份：明亮用白字，赛博用深字 */
+  font-weight: 600;
+}
+
+.filter-btn.is-on:hover {
+  background: var(--brand);
+  color: var(--on-brand);
+  transform: translateY(-1px);
+}
+
+/* 焦点框只给键盘（鼠标点完不该留一圈） */
+.filter-btn:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* 右侧条数：筛选结果最直接的"文字证据"，会一直留在那儿 */
+.filter-count {
+  margin-left: auto;
+  font-size: 13.5px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;   /* 数字等宽，来回切档位时不会左右抖 */
+}
+
+/* 空状态：这一档下一条都没有。
+   外形复用 .empty-note，只补一条左侧竖线 —— 跟"这个城市从来没数据"区分开 */
+.filter-empty {
+  box-shadow: inset 3px 0 0 0 var(--ink-3);
+}
+
+/* 窄屏：标签和按钮挤在一起不好点，让条数单独占一行 */
+@media (max-width: 560px) {
+  .filter-bar { gap: 6px; padding: 9px 11px; }
+  .filter-btn { padding: 5px 13px; font-size: 13px; }
+  .filter-count { flex-basis: 100%; margin-left: 0; text-align: right; }
+}
+
 /* 窄屏：手机上的表格本来就窄，缩进和字号都收一点 */
 @media (max-width: 560px) {
   .more-btn { font-size: 12px; }

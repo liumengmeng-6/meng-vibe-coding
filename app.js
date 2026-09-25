@@ -1391,9 +1391,41 @@ function cheaperOf(plans, current) {
 }
 
 /* B5 美食美景清单 */
+
+/* 当前筛选档位：'all' 全部 / 'en' 只看吃的 / 'play' 只看玩的（Day 12）
+   为什么放在函数外面、不当参数传：
+     这份清单会被重画很多次（添加/删除自填地点、重新生成方案都会重画），
+     每次重画都不该把用户刚选好的档位弄丢。 */
+var highlightFilter = 'all';
+
+/* 把"当前选中哪一档"同步到三个按钮上。
+   aria-pressed 是给读屏软件看的 —— 它读不出"颜色深一点"，
+   但读得出"这个按钮处于按下状态"。 */
+function syncFilterButtons() {
+  var btns = document.querySelectorAll('#block-highlights .filter-btn');
+  for (var i = 0; i < btns.length; i++) {
+    var on = btns[i].getAttribute('data-filter') === highlightFilter;
+    btns[i].className = 'filter-btn' + (on ? ' is-on' : '');
+    btns[i].setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+}
+
+/* 切换档位：先同步按钮，再重画清单（条数在重画时一起更新） */
+function setHighlightFilter(f) {
+  if (f === highlightFilter) { return; }   // 点同一档不用重画
+  highlightFilter = f;
+  syncFilterButtons();
+  if (lastInput && lastInput.cities) {
+    renderHighlights(lastInput.cities);
+  }
+}
+
 function renderHighlights(cities) {
   var box = document.getElementById('highlights-body');
   box.innerHTML = '';
+
+  // 全页一共筛出多少条（顶部那行"共 N 条 / 筛出 N 条"要用）
+  var shownTotal = 0;
 
   for (var i = 0; i < cities.length; i++) {
     var city = cities[i];
@@ -1421,13 +1453,24 @@ function renderHighlights(cities) {
                      price: saved[s0].price, self: true, selfIndex: s0 });
     }
 
-    if (allRows.length > 0) {
+    // 按当前档位过滤（Day 12）
+    //   注意：这里过滤的是"这个城市要显示哪几条"，不是把数据删掉 ——
+    //   切回「全部」时用的还是 allRows，一条都不会少。
+    var rows = highlightFilter === 'all'
+      ? allRows
+      : allRows.filter(function (r) { return r.type === highlightFilter; });
+    shownTotal += rows.length;
+
+    // 这个城市的统计说明，下面两个分支共用同一份文字
+    var tagText = list && list.length > 0
+      ? ('（内置推荐 ' + list.length + ' 条' +
+         (saved.length > 0 ? ' + 你自己添加 ' + saved.length + ' 条' : '') + '）')
+      : ('（你自己添加 ' + saved.length + ' 条）');
+
+    if (rows.length > 0) {
       var tag = document.createElement('span');
       tag.className = 'city-tag';
-      tag.textContent = list && list.length > 0
-        ? ('（内置推荐 ' + list.length + ' 条' +
-           (saved.length > 0 ? ' + 你自己添加 ' + saved.length + ' 条' : '') + '）')
-        : ('（你自己添加 ' + saved.length + ' 条）');
+      tag.textContent = tagText;
       h3.appendChild(tag);
       block.appendChild(h3);
 
@@ -1439,8 +1482,8 @@ function renderHighlights(cities) {
       table.appendChild(thead);
       var tbody = document.createElement('tbody');
 
-      for (var k = 0; k < allRows.length; k++) {
-        var item = allRows[k];
+      for (var k = 0; k < rows.length; k++) {
+        var item = rows[k];
         var tr = document.createElement('tr');
 
         var td1 = document.createElement('td');
@@ -1486,6 +1529,21 @@ function renderHighlights(cities) {
       }
       table.appendChild(tbody);
       block.appendChild(table);
+    } else if (allRows.length > 0) {
+      // 这个城市有内容，但当前档位把它们全筛掉了（Day 12）
+      //   必须说话 —— 直接留一片空白，用户会以为页面坏了。
+      //   文案里要给出出口（点「全部」），并把真实条数讲明白，免得看起来像"数据丢了"。
+      var tag3 = document.createElement('span');
+      tag3.className = 'city-tag';
+      tag3.textContent = '（这个筛选下没有）';
+      h3.appendChild(tag3);
+      block.appendChild(h3);
+
+      var filteredOut = document.createElement('div');
+      filteredOut.className = 'empty-note filter-empty';
+      filteredOut.textContent = '这个筛选下没有条目 —— ' + city + '一共有 ' + allRows.length +
+        ' 条，都属于另一类。点上面的「全部」就能都看回来。';
+      block.appendChild(filteredOut);
     } else {
       var tag2 = document.createElement('span');
       tag2.className = 'city-tag';
@@ -1508,6 +1566,16 @@ function renderHighlights(cities) {
     if (subEl) refreshSelfSubtotal(city, subEl);
 
     box.appendChild(block);
+  }
+
+  // 顶部条数（Day 12）：让用户一眼看到"筛完还剩几条"
+  //   文字是最明确的一档反馈 —— 它一直留在那儿，不像动效眨眼就过。
+  //   这个元素上已经写了 aria-live="polite"，读屏软件会自动播报新数字。
+  var cnt = document.getElementById('filter-count');
+  if (cnt) {
+    cnt.textContent = highlightFilter === 'all'
+      ? ('共 ' + shownTotal + ' 条')
+      : ('筛出 ' + shownTotal + ' 条');
   }
 }
 
@@ -2102,6 +2170,17 @@ function hideResetConfirm() {
 function initApp() {
   document.getElementById('btn-generate').addEventListener('click', generate);
   document.getElementById('btn-add-city').addEventListener('click', addCity);
+
+  /* 美食清单的三个筛选按钮（Day 12）
+     三段几乎一样的代码合成一段，靠 data-filter 区分是哪一档。
+     用 this 而不是闭包变量去认按钮：闭包在重画后会指错元素
+     （这个坑 Day 7 做删除按钮时踩过）。 */
+  var filterBtns = document.querySelectorAll('#block-highlights .filter-btn');
+  for (var fb = 0; fb < filterBtns.length; fb++) {
+    filterBtns[fb].addEventListener('click', function () {
+      setHighlightFilter(this.getAttribute('data-filter'));
+    });
+  }
 
   // 城市输入框里按回车 = 点"添加"
   document.getElementById('to-city-input').addEventListener('keydown', function (e) {
