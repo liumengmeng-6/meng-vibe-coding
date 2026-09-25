@@ -1649,6 +1649,101 @@ html { overflow-x: hidden; }
   html:not([data-theme="cyber"]) .light-glow { display: none; }
 }
 
+/* ---------- 行程表「没排下的建议」展开 / 收起（Day 11 追加） ----------
+
+   这一块解决的是"程序算出来了、但显示不出来"的内容：
+   一个城市待的天数不够时，池子里总会剩下几条排不进去。
+   以前只报个数（"还有 2 条建议没排下"），现在点一下能看见是哪几条。
+*/
+
+/* 行程正文单独成块：这样后面的展开按钮自己换行，
+   不用在 JS 里塞 <br>，也不用给按钮写死外边距去硬凑 */
+.row-detail { display: block; }
+
+.more-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+  padding: 3px 10px;
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-2);
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.7;
+  cursor: pointer;
+  transition: color .15s, border-color .15s, background .15s;
+}
+
+.more-btn:hover {
+  color: var(--brand);
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+
+/* 键盘 Tab 走到它的时候也得看得见（Day 11 加练：焦点状态）。
+   只写 :focus-visible、不写 :focus —— 鼠标点完不该留一圈框，
+   只有键盘操作才需要，这件事浏览器已经帮我们区分好了。 */
+.more-btn:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* 展开之后箭头翻个身，指回"收起来"的方向。
+   为什么不用 ▾ 这个字符：小字号下它在屏幕上只剩一个点，等于没有（Day 11 实测）。
+   改成用边框自己画一个三角，大小才由我们说了算。
+   font-size: 0 是为了把 span 里那个 ▾ 字符藏起来 ——
+   留着它是当"样式万一没加载"时的降级；正常情况由边框画的三角出场。 */
+.more-arrow {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid currentColor;   /* currentColor：跟着按钮文字颜色走，
+                                           悬停变蓝时箭头一起变，不用再写一条规则 */
+  font-size: 0;
+  line-height: 0;
+  transition: transform var(--dur) var(--ease);
+}
+
+.more-btn.is-open .more-arrow { transform: rotate(180deg); }
+
+/* 展开出来的那几条 */
+.more-list {
+  margin: 8px 0 0;
+  padding: 8px 12px 8px 22px;
+  border-radius: 8px;
+  background: var(--brand-soft);
+  box-shadow: inset 3px 0 0 0 var(--brand);
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--ink);
+  animation: more-open var(--dur) var(--ease) both;
+}
+
+/* 为什么排不下 —— 先看内容是哪几条，再看原因，顺序别倒 */
+.more-why {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--ink-3);
+}
+
+/* 兜底（Day 10 踩过的坑）：作者样式里的 display 会盖掉浏览器默认的
+   [hidden]{display:none}，元素就"藏不住"了。这里虽然没给它们设 display，
+   但先写死一条，免得以后有人加了 display:flex 才发现。 */
+.more-list[hidden],
+.more-why[hidden] { display: none; }
+
+/* 窄屏：手机上的表格本来就窄，缩进和字号都收一点 */
+@media (max-width: 560px) {
+  .more-btn { font-size: 12px; }
+  .more-list { padding: 7px 10px 7px 19px; font-size: 12.5px; }
+}
+
 /* ============================================================
    关键帧动画库（Day 8 追加）
 
@@ -1659,6 +1754,13 @@ html { overflow-x: hidden; }
 /* --- 共用 --- */
 
 /* 从下方 14px 淡入上浮：结果区逐块出现用 */
+/* 展开的建议：轻轻从上往下浮出来（Day 11 追加）
+   位移只给 4px —— 它是"补充说明"，不是新内容，不该从远处飞进来抢注意力 */
+@keyframes more-open {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 @keyframes fade-up {
   from { opacity: 0; transform: translateY(14px); }
   to   { opacity: 1; transform: translateY(0); }

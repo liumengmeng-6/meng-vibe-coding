@@ -926,11 +926,21 @@ function renderItinerary(split, input) {
 
       // 最后一天：如果内容没排完，如实告诉用户"还剩几条没排进去"
       //   为什么必须说：用户自己加的地点若因为天数不够被吞掉，他会以为"加了没用"
+      // 最后一天：如果内容没排完，把"没排上的那几条"挂在这一行上（Day 11 改成可展开）
+      //   为什么必须说：用户自己加的地点若因为天数不够被吞掉，他会以为"加了没用"
+      //   为什么从"一句话"改成"可展开"（Day 11）：
+      //     原来只报个数（"还有 2 条建议没排下"），用户知道有东西被扔了、
+      //     却看不到被扔的是什么 —— 等于程序算完又藏起来。
+      //     展开能看见具体是哪几条，这句话才算说完。
+      var more = null;
       if (d === cityDays - 1) {
-        var leftCount = pool.length - cityDays * perDay;
-        if (leftCount > 0) {
-          detail += '（还有 ' + leftCount + ' 条建议没排下，' +
-                    city + '只待 ' + cityDays + ' 天，加天数就能排上）';
+        var rest = pool.slice(cityDays * perDay);
+        if (rest.length > 0) {
+          more = {
+            count: rest.length,
+            reason: city + '只待 ' + cityDays + ' 天，加天数就能都排上',
+            items: rest.map(function (x) { return x.text; })
+          };
         }
       }
 
@@ -938,6 +948,8 @@ function renderItinerary(split, input) {
         type: 'city',
         label: city,
         detail: detail,
+        // 这一行"没排下的建议"（Day 11）：没有就是 null，渲染时也就不出展开按钮
+        more: more,
         // 当天花费：市内交通 + 吃 + 门票（住宿不按天摊，它按"晚"单独算）
         //   注意：这里【不含】自填地点的花费，避免和"门票"那一项重复计算
         cost: PRICES.cityTransferPerDay + PRICES.foodPerDay + PRICES.ticketPerDay,
@@ -970,7 +982,76 @@ function renderItinerary(split, input) {
     td2.textContent = row.label;
 
     var td3 = document.createElement('td');
-    td3.textContent = row.detail;
+
+    /* 正文外面套一个块级 span（Day 11）：
+       这样后面那个展开按钮会自己换到下一行，不用在 JS 里塞 <br>，
+       也不用给按钮写一堆奇怪的外边距去硬凑。 */
+    var detailText = document.createElement('span');
+    detailText.className = 'row-detail';
+    detailText.textContent = row.detail;
+    td3.appendChild(detailText);
+
+    /* 这一天"没排下的建议"：默认藏起来，点一下才看（Day 11）
+       反馈设计说明：
+         - 按钮上的字从「展开看这 N 条」变成「收起」 → 这是最明确的一档反馈
+           （状态文字变了）。文字会一直留在那儿，用户不用盯着看也漏不掉。
+         - 箭头转 180°、列表淡入               → 只是陪衬，让人"觉得顺"，
+           不靠它传达信息（动效眨眼就过，是最弱的一档）。
+       为什么按钮里先放两个 span 再往里填字：
+         回调里要改的只有文字那一段，用 span 精确定位比重新拼一遍按钮内容稳。 */
+    if (row.more) {
+      var moreBtn = document.createElement('button');
+      moreBtn.type = 'button';
+      moreBtn.className = 'more-btn';
+      moreBtn.setAttribute('aria-expanded', 'false');
+
+      var moreTxt = document.createElement('span');
+      moreTxt.className = 'more-txt';
+      moreTxt.textContent = '展开看这 ' + row.more.count + ' 条';
+
+      var moreArrow = document.createElement('span');
+      moreArrow.className = 'more-arrow';
+      moreArrow.setAttribute('aria-hidden', 'true');
+      moreArrow.textContent = '▾';
+
+      moreBtn.appendChild(moreTxt);
+      moreBtn.appendChild(moreArrow);
+
+      var moreList = document.createElement('ul');
+      moreList.className = 'more-list';
+      moreList.hidden = true;
+      for (var q = 0; q < row.more.items.length; q++) {
+        var moreLi = document.createElement('li');
+        moreLi.textContent = row.more.items[q];
+        moreList.appendChild(moreLi);
+      }
+
+      var moreWhy = document.createElement('p');
+      moreWhy.className = 'more-why';
+      moreWhy.hidden = true;
+      moreWhy.textContent = row.more.reason;
+
+      /* 点击切换：只认"自己这一组"（按钮 + 它后面那个列表和说明）。
+         所以从按钮本身去找兄弟节点，不用闭包变量 —— 闭包变量在重渲染后会指错行，
+         Day 7 做删除按钮时就踩过这个坑（当时改用 data-* 存身份解决）。 */
+      moreBtn.addEventListener('click', function (ev) {
+        var btn = ev.currentTarget;
+        var list = btn.parentNode.querySelector('.more-list');
+        var why = btn.parentNode.querySelector('.more-why');
+        var txt = btn.querySelector('.more-txt');
+        var willOpen = list.hidden;
+
+        list.hidden = !willOpen;
+        why.hidden = !willOpen;
+        btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+        btn.classList.toggle('is-open', willOpen);
+        txt.textContent = willOpen ? '收起' : '展开看这 ' + list.children.length + ' 条';
+      });
+
+      td3.appendChild(moreBtn);
+      td3.appendChild(moreList);
+      td3.appendChild(moreWhy);
+    }
 
     var td4 = document.createElement('td');
     td4.className = 'num';
