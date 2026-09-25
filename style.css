@@ -39,6 +39,8 @@
   --good-soft: #e7f4ec;
   --bad: #b4322b;
   --bad-soft: #fbece9;
+  --bad-line: #efd3cd;       /* 危险提示条的细边（比 --bad 淡，不抢眼） */
+  --on-bad: #ffffff;         /* 压在 --bad 上的文字色 */
 
   /* 抽出这些"补丁色"，是为了让深色主题能整体换掉。
      原来它们散落在各处写死（#fff / #fafbfc / #fcfcfd），
@@ -108,6 +110,8 @@
   --good-soft: #08281f;
   --bad: #ff5c6e;
   --bad-soft: #2e0f16;
+  --bad-line: #4a2029;
+  --on-bad: #04121a;         /* 赛博的 --bad 是亮红，压深色字才够对比（白字只有 3.0，不达标） */
 
   --surface: #0d1220;
   --surface-2: #121a2a;
@@ -852,6 +856,98 @@ main, .page-main { flex: 1 0 auto; }
   border-top: 1px solid var(--border);
   /* 窄屏（没启用网格）时按钮区自己占一整行 */
   grid-column: 1 / -1;
+}
+
+/* ---------- 清空确认条（Day 10 新增） ----------
+
+   背景：原来的「清空重填」一点就清 —— 连用户自己加的、存在浏览器里的地点
+   也一起删掉，页面上却一个字都不说。误点之后没有后悔药，只能重填一遍。
+
+   为什么做成【页面上的一条】，而不是浏览器原生那种灰框弹窗：
+   Day 9 刚把 Windows 原生灰滚动条美化掉，理由就是"露出系统原生控件会显得没做完"。
+   原生弹窗是同一个毛病，而且它盖在页面正中间，比滚动条还显眼。
+
+   安全设计：焦点默认落在「取消」上（逻辑在 app.js 的 showResetConfirm 里）。
+   这是会删数据的操作，闭着眼敲回车不该把东西删掉。 */
+
+/* 这一条不能省，也不能删：
+   上面给 .confirm-bar 设了 display:flex，而【作者样式里的 display
+   会盖过浏览器默认的 [hidden]{display:none}】—— 结果是 hidden 属性
+   彻底失效，确认条一打开页面就杵在那儿。踩过一次，记在这儿。 */
+.confirm-bar[hidden] { display: none; }
+
+.confirm-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  /* 跟 .actions 一样：窄屏（没启用网格）时自己占一整行 */
+  grid-column: 1 / -1;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--bad-line, #efd3cd);
+  border-left: 3px solid var(--bad, #b4322b);   /* 左边一条加粗的警示条 */
+  border-radius: 10px;
+  background: var(--bad-soft, #fbece9);
+  animation: confirm-in .22s ease-out;
+}
+
+.confirm-mark {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--bad, #b4322b);
+  color: var(--on-bad, #ffffff);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.confirm-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--bad, #b4322b);
+}
+
+.confirm-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 危险按钮：只给"确认会删东西"的操作用，全站唯一一处 */
+.btn-danger {
+  background: var(--bad, #b4322b);
+  color: var(--on-bad, #ffffff);
+  font-weight: 600;
+  font-size: 14px;
+  padding: 8px 16px;
+}
+
+.btn-danger:hover { filter: brightness(1.08); }
+
+@keyframes confirm-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .confirm-bar { animation: none !important; }
+}
+
+@media (max-width: 560px) {
+  /* 窄屏：图标和文字留在第一行（文字自己换行），按钮组落到第二行右对齐。
+     不给 .confirm-text 设 100%，否则图标会被单独挤到一行，白占一行高度。 */
+  .confirm-bar { flex-wrap: wrap; gap: 10px; padding: 11px 12px; }
+  .confirm-text { font-size: 13px; }
+  .confirm-actions { flex: 1 1 100%; justify-content: flex-end; }
 }
 
 /* ============================================================

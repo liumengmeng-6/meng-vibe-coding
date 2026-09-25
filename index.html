@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>出行规划小助手｜预算内最合适的行程</title>
 
-  <!-- 后面的 ?v=20260924b 是"版本号"，不是路径。
+  <!-- 后面的 ?v=20260925a 是"版本号"，不是路径。
        作用：强迫浏览器在样式更新后重新下载 style.css。
        不加的话，浏览器会把旧的 CSS 存在本地反复用，
        结果就是"我明明改了样式，你打开却没变化"。
        注意：这仍然只是本地文件，不联网，离线照常可用。 -->
-  <link rel="stylesheet" href="style.css?v=20260924b">
+  <link rel="stylesheet" href="style.css?v=20260925a">
 
   <!-- 主题抢先应用：必须在 <body> 画出来之前执行，
        否则选了赛博主题的人刷新时会先闪一下白屏再变黑（很难受）。
@@ -92,6 +92,22 @@
       <div class="actions">
         <button type="button" class="btn btn-primary" id="btn-generate">生成方案</button>
         <button type="button" class="btn btn-quiet" id="btn-reset">清空重填</button>
+      </div>
+
+      <!-- 清空确认条（Day 10 新增）
+           为什么要有它：原来的「清空重填」一点就直接清 —— 连用户自己加的、
+           已经存进浏览器的地点也一起删掉，而且页面上【一句话都不说】。
+           误点之后没有后悔药，只能重新填一遍。
+           现在改成：点一下先出这条，「确定清空」才真清，「取消」就收起来。
+           这是页面上的一条，不是浏览器原生那种灰框弹窗 ——
+           原生弹窗长得像操作系统、跟页面脱节，也塞不下这句说明。 -->
+      <div class="confirm-bar" id="confirm-reset" role="alert" hidden>
+        <span class="confirm-mark" aria-hidden="true">!</span>
+        <p class="confirm-text">清空会同时删掉你自填的地点，确定吗？</p>
+        <div class="confirm-actions">
+          <button type="button" class="btn btn-danger" id="btn-reset-yes">确定清空</button>
+          <button type="button" class="btn btn-quiet" id="btn-reset-no">取消</button>
+        </div>
       </div>
 
       <!-- 纸飞机航线图案（纯装饰，读屏软件会跳过）
@@ -293,7 +309,7 @@
 
   <!-- 逻辑脚本：必须是普通 script（不能用 type="module"），否则双击打开时不会执行。
        末尾的 ?v= 是版本号，作用同上面的 style.css：改了脚本你才看得到变化。 -->
-  <script src="app.js?v=20260924b" defer></script>
+  <script src="app.js?v=20260925a" defer></script>
 
 </body>
 </html>

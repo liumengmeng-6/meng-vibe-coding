@@ -1739,6 +1739,12 @@ function addCity() {
 function generate() {
   clearErrors();
 
+  /* 注意力已经转到"生成"上了 —— 清空的确认条先收起来。
+     否则上面挂着"确定清空吗"、下面开始算行程，看着很怪。
+     （按回车也能触发 generate，所以放在这里最保险，
+       不用给每个入口单独加。） */
+  hideResetConfirm();
+
   /* 先把上次的结果收起来（回到"空"状态），避免"新输入 + 旧结果"混在一起看。
      注意：结果区本身【不再整体隐藏】—— 它现在一开始就可见，
      里面装着空状态；生成过程中换成转圈、生成完换成六块结果。 */
@@ -1972,6 +1978,31 @@ function revealBlocks() {
   });
 }
 
+/* ---------- E2. 清空确认（Day 10 新增） ---------- */
+
+/* 为什么需要这两个函数：
+   原来的「清空重填」是【一点就清、清完一个字都不说】——
+   输入没了，用户自己加的地点（这部分还存在浏览器里）也一起没了，
+   页面上却什么提示都没有。误点一下只能重填一遍。
+
+   现在改成两步：点按钮 → 出现确认条 → 点「确定清空」才真清。
+   注意这是【页面上的】一条，不是浏览器原生那种灰框弹窗：
+   原生弹窗长得像操作系统、跟整个页面脱节，也装不下这句说明。 */
+
+function showResetConfirm() {
+  var bar = document.getElementById('confirm-reset');
+  if (bar) { bar.hidden = false; }
+  /* 焦点默认落在「取消」上。理由：这是"会删东西"的操作，
+     闭着眼敲回车不该把数据删掉 —— 安全的那个选项才配当默认。 */
+  var no = document.getElementById('btn-reset-no');
+  if (no) { no.focus(); }
+}
+
+function hideResetConfirm() {
+  var bar = document.getElementById('confirm-reset');
+  if (bar) { bar.hidden = true; }
+}
+
 /* ---------- F. 初始化 ---------- */
 
 function initApp() {
@@ -1990,7 +2021,14 @@ function initApp() {
     });
   });
 
+  /* 点「清空重填」→ 不再直接清，先问一句（Day 10 改动）。
+     这一步只负责"把确认条亮出来"，真正清空在下面那个监听里。 */
   document.getElementById('btn-reset').addEventListener('click', function () {
+    showResetConfirm();
+  });
+
+  /* 点「确定清空」→ 这次真清 */
+  document.getElementById('btn-reset-yes').addEventListener('click', function () {
     document.getElementById('from-city').value = '';
     document.getElementById('to-city-input').value = '';
     document.getElementById('days').value = '';
@@ -2007,7 +2045,25 @@ function initApp() {
        cancelRunning 内部已经会把结果区切回"空状态"。 */
     cancelRunning();
     renderCityChips();
+    hideResetConfirm();
     document.getElementById('from-city').focus();
+  });
+
+  /* 点「取消」→ 收起来，什么都不动，焦点回到「清空重填」上 */
+  document.getElementById('btn-reset-no').addEventListener('click', function () {
+    hideResetConfirm();
+    document.getElementById('btn-reset').focus();
+  });
+
+  /* 按 Esc 也能取消。正经产品都这样 ——
+     不用让用户"必须把鼠标移回去点那个取消"。 */
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') { return; }
+    var bar = document.getElementById('confirm-reset');
+    if (bar && !bar.hidden) {
+      hideResetConfirm();
+      document.getElementById('btn-reset').focus();
+    }
   });
 
   renderCityChips();
