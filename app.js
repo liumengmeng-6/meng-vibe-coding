@@ -1710,20 +1710,33 @@ function renderCityChips() {
   lastChipList = selectedCities.slice();
 }
 
+/* 往「想去的城市」下方那条提示位上写一句话。
+   三个地方共用：空输入 / 已经加过 / 超过 4 个。
+   （Day 10 收尾追加：原来前两种情况完全静默，用户不知道发生了什么） */
+function setCityHint(msg) {
+  var el = document.getElementById('error-to-city');
+  el.hidden = false;
+  el.textContent = msg;
+}
+
 function addCity() {
   var input = document.getElementById('to-city-input');
   var name = input.value.trim();
 
-  if (name === '') { input.focus(); return; }
+  if (name === '') {
+    setCityHint('先输入一个城市名，再点「添加」');
+    input.focus();
+    return;
+  }
 
   if (selectedCities.indexOf(name) >= 0) {
+    setCityHint('「' + name + '」已经在列表里了');
     input.value = '';
+    input.focus();
     return;   // 已经加过了，不重复加
   }
   if (selectedCities.length >= 4) {
-    var el = document.getElementById('error-to-city');
-    el.hidden = false;
-    el.textContent = '最多 4 个城市，先去掉一个再加';
+    setCityHint('最多 4 个城市，先去掉一个再加');
     return;
   }
 
