@@ -841,6 +841,21 @@ function showErrors(errors) {
     var el = document.getElementById(map[key]);
     if (el) { el.hidden = false; el.textContent = errors[key]; }
   });
+
+  /* Day 13：除了字段旁边的红字，再在结果区给一张会说话的卡片。
+     两个各管一头 —— 红字贴着输入框（改起来近），
+     卡片管"错误这个状态本身要有个看得见的样子"。
+     这里把 errors 转成 [{label, message}] 交给 showError。 */
+  var labels = {
+    fromCity: '出发城市',
+    cities:   '想去的城市',
+    days:     '玩几天',
+    budget:   '总预算'
+  };
+  var items = Object.keys(errors).map(function (key) {
+    return { label: labels[key] || key, message: errors[key] };
+  });
+  showError(items);
 }
 
 /* ---------- B. 渲染 ---------- */
@@ -1372,11 +1387,20 @@ function switchPlan(planId) {
     cheaperPlan: cheaperOf(lastPlans, picked)
   });
 
+  /* Day 13：只重画"当前视图里那几块"。
+     以前是无条件把五块都重画一遍 —— 加了视图之后这么干有两处浪费：
+       ① 用户人在"账本"视图，切方案时把"整体方案"那两张表也重画了，白干
+       ② 重画会把已经隐藏的块重新填内容，将来若有人改了显隐逻辑容易出岔子
+     注意 renderPlans 必须留着 —— 方案卡片本身就在"整体方案"视图里，
+     而切换方案时那张卡片上的"当前选中"标记得跟着变，
+     哪怕用户此刻不在那个视图（切回去要看到正确的选中态）。 */
   renderPlans(lastPlans, activePlanId);
-  renderItinerary(picked.split, lastInput);
-  renderTransport(picked.split, chosenKeys);
-  renderCost(picked.cost);
-  renderBudget(verdict);
+
+  var inView = VIEWS[currentView];
+  if (inView.indexOf('block-itinerary') >= 0) { renderItinerary(picked.split, lastInput); }
+  if (inView.indexOf('block-transport') >= 0) { renderTransport(picked.split, chosenKeys); }
+  if (inView.indexOf('block-cost') >= 0) { renderCost(picked.cost); }
+  if (inView.indexOf('block-budget') >= 0) { renderBudget(verdict); }
 }
 
 /* 在若干方案里，找出比"当前这套"更便宜的那一套（用于超支建议） */
@@ -1916,8 +1940,10 @@ function generate() {
   var errors = validateInput(input);
 
   if (Object.keys(errors).length > 0) {
+    /* 有校验不过 → 切到「错误」状态（Day 13：以前是"默默退回空状态"），
+       并且【不生成半成品】（PRD F2）。 */
     showErrors(errors);
-    return;   // 有任何一项不过 → 不生成半成品（PRD F2）
+    return;
   }
 
   /* 校验都过了才开始加载 + 干活。
@@ -1949,9 +1975,11 @@ function doGenerate(input, token) {
   if (plans.length === 0) {
     var single = splitDays(fromCity, input.cities, input.days);
     if (!single.ok) {
-      // 出错了：收掉转圈和按钮锁，退回"空"状态 + 字段下方红字提示
+      /* 出错了：收掉转圈和按钮锁，切到「错误」状态。
+         注意【不要】在这里先调 showEmpty() ——
+         showErrors 内部会调 showError，它自己就是"切到错误状态"，
+         前面再插一次 showEmpty 只会白闪一下空状态。 */
       hideLoading();
-      showEmpty();
       showErrors({ days: single.message });
       return;
     }
@@ -1986,7 +2014,13 @@ function doGenerate(input, token) {
     cheaperPlan: cheaperOf(plans, defaultPlan)
   });
 
-  // 渲染六块
+  /* 每次生成都从「整体方案」开始看。
+     理由：用户按顺序就是"先挑方案、再看行程、最后看账本"。
+     上一轮如果停在"账本"，这次生成完直接跳到账本会让人莫名其妙 ——
+     明明是重新算了一遍，却看不到最该先看的方案对比。 */
+  currentView = 'plan';
+
+  // 渲染六块（都渲染好，切视图时不用重算；显隐由 applyView 管）
   renderPlans(plans, activePlanId);
   renderItinerary(defaultPlan.split, input);
   renderTransport(defaultPlan.split, chosenKeys);
@@ -2009,10 +2043,19 @@ function doGenerate(input, token) {
     hideLoading();
 
     /* 切到「正常」状态：收掉空状态，六块错峰淡入。
-       revealBlocks 内部会把六块逐个 hidden=false，所以这里不用再管结果区本身
-       （结果区现在一直是可见的，切换的是里面哪一块可见）。 */
+       revealBlocks 内部会按当前视图决定显示哪几块，
+       所以这里不用再管结果区本身（结果区一直可见，切换的是里面哪一块可见）。 */
     document.getElementById('block-empty').hidden = true;
     revealBlocks();
+
+    /* 地址栏同步写上 #plan。
+       为什么连"本来是空 hash"也要写：用户切到 #trip 之后按后退键，
+       浏览器要回到上一个历史点 —— 那个点如果没写锚点，就退不回来了。
+       先写下 #plan 等于给"最初的视图"钉了个记认点。
+       用 replace 不入历史：重新生成本来就该覆盖当前状态，不该多一个历史点。 */
+    if (window.location.hash !== '#plan') {
+      try { window.location.replace('#plan'); } catch (e) { /* 忽略即可 */ }
+    }
 
     // 按顺序执行完，滚到结果那儿（否则用户不知道下面出东西了）
     // 加一层判断：极老的浏览器可能没有这个 API，不该因此让整个生成失败
@@ -2041,6 +2084,148 @@ function doGenerate(input, token) {
 var BLOCK_IDS = ['block-plans', 'block-itinerary', 'block-transport',
                  'block-cost', 'block-budget', 'block-highlights'];
 
+/* ---------- E0. 视图切换（Day 13 新增） ----------
+
+   三个视图，每个视图装自己那几块：
+
+     整体方案 plan → block-plans + block-transport
+     每日行程 trip → block-itinerary
+     账本     cost → block-cost + block-budget + block-highlights
+
+   为什么这么分：用户看结果的顺序本来就是"先挑方案 → 再看行程 → 最后看花销"，
+   六块挤在一条竖直线上要滚很久；分成三屏之后每屏只管一件事。
+
+   视图方式选的是【标签 + 地址锚点】（没引路由库）：
+     · 标签本身纯 JS 换显隐，零依赖，跟项目里其他交互一个路子
+     · 同时改 location.hash，白捡两件事：浏览器后退键能回上一个视图、刷新停在同一视图
+     · 用 hashchange 而不是自己写路由器：地址一变就跟着切，代码量约等于零
+   为什么不用 full 路由库：这点需求引库要多配一堆东西（还有可能碰 AC1/AC14），
+   属于"用了大炮打蚊子"。 */
+
+var VIEWS = {
+  plan: ['block-plans', 'block-transport'],
+  trip: ['block-itinerary'],
+  cost: ['block-cost', 'block-budget', 'block-highlights']
+};
+
+/* 当前在哪个视图。默认"整体方案"—— 用户生成完最该先看的就是挑哪套。 */
+var currentView = 'plan';
+
+/* 把某个视图的块显示出来、其它视图的块藏起来。
+   注意这里只管【正常态内的切换】，空/加载/错误三种状态是另一回事
+   （见下面的 showEmpty / showLoading / showError）。 */
+function applyView(view) {
+  if (!VIEWS[view]) { view = 'plan'; }   // 地址栏里手输了奇怪的 #xxx → 退回默认，不报错
+  currentView = view;
+
+  // ① 先把六个结果块全部藏起来
+  BLOCK_IDS.forEach(function (id) {
+    document.getElementById(id).hidden = true;
+  });
+
+  // ② 只要有数据，就把当前视图该显示的那几块放出来
+  //    （没数据时不放 —— 那时候页面显示的是空/加载/错误，不该有结果块）
+  if (hasResults) {
+    VIEWS[view].forEach(function (id) {
+      document.getElementById(id).hidden = false;
+    });
+  }
+
+  syncViewTabs();
+}
+
+/* 把"现在是哪个视图"同步到三个标签按钮上。
+   aria-selected 是给读屏软件看的：它读不出"哪个按钮颜色深"，
+   只能读这个属性 —— 跟 Day 12 筛选栏的 aria-pressed 是一个道理。 */
+function syncViewTabs() {
+  var tabs = document.querySelectorAll('#view-tabs .view-tab');
+  for (var i = 0; i < tabs.length; i++) {
+    var on = tabs[i].getAttribute('data-view') === currentView;
+    tabs[i].classList.toggle('is-on', on);
+    tabs[i].setAttribute('aria-selected', on ? 'true' : 'false');
+    /* 选中的那个才进 Tab 键顺序（roving tabindex）。
+       这是标签组的标准做法：Tab 键在整组上只停一次，组内用左右方向键换。 */
+    tabs[i].setAttribute('tabindex', on ? '0' : '-1');
+  }
+}
+
+/* 切视图。用户点标签、或者地址栏 hash 变了，都走这里。 */
+function switchView(view, opts) {
+  opts = opts || {};
+  if (!VIEWS[view]) { view = 'plan'; }
+
+  /* 切之前先按需重画 —— 切换方案时我们只重画了"当时在那个视图里"的块，
+     所以别的视图里可能还是旧方案的内容。不重画的话会出现：
+     在"整体方案"里切到性价比方案 → 再点"每日行程" → 看到的还是最省方案的行程。
+     （重画用的是 lastInput / lastPlans，没生成过就跳过。） */
+  repaintForView(view);
+
+  applyView(view);
+
+  // 地址栏跟着变（用 replace 是为了不让"切视图"在历史里堆一长串）
+  if (!opts.skipHash) {
+    var want = '#' + view;
+    if (window.location.hash !== want) {
+      try {
+        if (opts.replace) {
+          window.location.replace('#' + view);
+        } else {
+          window.location.hash = view;
+        }
+      } catch (e) { /* 极老浏览器或 file:// 下个别限制，忽略即可，页面照样能切 */ }
+    }
+  }
+
+  /* 切完视图滚到结果区顶部。
+     不滚的话：在"账本"里往下看了很久，切到"每日行程"还停在原来的滚动位置，
+     会直接落在页面中间，用户以为点坏了。 */
+  var area = document.getElementById('result-area');
+  if (area && area.scrollIntoView) {
+    area.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+
+/* 按当前选中的方案，重画指定视图里的块。
+   只在"生成过"的前提下干活；没生成过就什么都不做（那时候页面是空状态）。 */
+function repaintForView(view) {
+  if (!hasResults || !lastInput || !lastPlans) { return; }
+
+  var picked = null;
+  for (var i = 0; i < lastPlans.length; i++) {
+    if (lastPlans[i].id === activePlanId) { picked = lastPlans[i]; }
+  }
+  if (!picked) { picked = lastPlans[0]; }
+
+  var chosenKeys = [];
+  for (var k = 0; k < picked.legs.length; k++) {
+    chosenKeys.push(picked.legs[k].chosen.key);
+  }
+
+  var ids = VIEWS[view] || [];
+  if (ids.indexOf('block-itinerary') >= 0) { renderItinerary(picked.split, lastInput); }
+  if (ids.indexOf('block-transport') >= 0) { renderTransport(picked.split, chosenKeys); }
+  if (ids.indexOf('block-cost') >= 0) { renderCost(picked.cost); }
+  if (ids.indexOf('block-highlights') >= 0) { renderHighlights(lastInput.cities); }
+  if (ids.indexOf('block-budget') >= 0) {
+    var verdict = compareBudget(picked.cost, lastInput.budget, picked.legs, {
+      plan: picked.split.plan,
+      totalDays: lastInput.days,
+      cheaperPlan: cheaperOf(lastPlans, picked)
+    });
+    renderBudget(verdict);
+  }
+
+  /* 注意：这里【不】调 revealBlocks()。
+     重画只是把内容换个新的，不该再播一遍"依次滑入"的入场动画 ——
+     用户只是切了个视图，不是重新生成，每切一次都动画一次会很吵。 */
+}
+
+/* 从地址栏读出该显示哪个视图（直接带 #trip 打开页面时用） */
+function viewFromHash() {
+  var h = (window.location.hash || '').replace(/^#\/?/, '');
+  return VIEWS[h] ? h : 'plan';
+}
+
 /* 加载中至少显示多久。太短了转圈会"闪一下"，比不显示还难看。
    400 毫秒：短到不烦人，长到能看清。 */
 var LOADING_MIN_MS = 400;
@@ -2052,8 +2237,14 @@ var LOADING_MIN_MS = 400;
    编号对不上就自己作废，这是异步代码里最省事的"防迟到"手段。 */
 var runToken = 0;
 
-/* 把结果区里所有内容块收起来（六块结果 + 转圈 + 空状态）。
-   三种状态互相切换时，第一步都是"先全部藏掉，再显示该显示的那个"，
+/* 有没有算出过结果。
+   为什么要单独记一个标记：视图切换（applyView）需要知道
+   "现在该不该显示结果块" —— 页面刚打开时是空状态，这时候就算你把
+   #trip 敲进地址栏，也不该凭空冒出六块结果来。 */
+var hasResults = false;
+
+/* 把结果区里所有内容块收起来（六块结果 + 转圈 + 空状态 + 错误卡）。
+   四种状态互相切换时，第一步都是"先全部藏掉，再显示该显示的那个"，
    这样不会出现两个状态同时可见的中间态。 */
 function hideAllBlocks() {
   BLOCK_IDS.forEach(function (id) {
@@ -2061,13 +2252,60 @@ function hideAllBlocks() {
   });
   document.getElementById('block-loading').hidden = true;
   document.getElementById('block-empty').hidden = true;
+  document.getElementById('block-error').hidden = true;   // Day 13
+  /* 视图标签栏也跟着藏：空/加载/错误这三种状态下都没有"多个视图"可言，
+     留着三个按钮可点却点不出东西，是骗人。 */
+  document.getElementById('view-tabs').hidden = true;
 }
 
-/* 切到「空」状态：还没生成过、或者刚被清空 / 输入不合格。 */
+/* 切到「空」状态：还没生成过、或者刚被清空。 */
 function showEmpty() {
+  hasResults = false;
   hideAllBlocks();
   document.getElementById('result-area').hidden = false;
   document.getElementById('block-empty').hidden = false;
+}
+
+/* 切到「错误」状态（Day 13 新增）。
+
+   以前输入不合格是"字段下面一行红字 + 结果区默默退回空状态" ——
+   等于用户【看不到"错误"这个状态本身】，只看到页面又变空了。
+
+   现在做成一张独立的错误卡片：写清楚哪几项不对、错在哪、怎么改。
+   注意字段旁边那行红字【还是留着】—— 它贴着输入框，改起来近；
+   这张卡片管的是"状态要有个看得见的样子"。两个各管一头。
+
+   items 是 [{label, message}, …]（label 是字段名，message 是为什么错） */
+function showError(items) {
+  hasResults = false;
+  hideAllBlocks();
+
+  var area = document.getElementById('result-area');
+  area.hidden = false;
+
+  var list = document.getElementById('error-list');
+  list.innerHTML = '';
+  for (var i = 0; i < items.length; i++) {
+    var li = document.createElement('li');
+    var name = document.createElement('b');
+    name.textContent = items[i].label + '：';
+    li.appendChild(name);
+    li.appendChild(document.createTextNode(items[i].message));
+    list.appendChild(li);
+  }
+
+  /* 标题里带上条数。一条的时候别写"共 1 项"（啰嗦），写清楚是哪儿就行。 */
+  document.getElementById('error-title').textContent =
+    items.length === 1 ? '这里还差一点' : '有 ' + items.length + ' 处需要改一下';
+
+  document.getElementById('block-error').hidden = false;
+
+  /* 滚到错误卡片那儿 —— 用户在按钮附近点生成，错误卡片在下面，
+     不滚过去的话他只会看到"页面没反应"。 */
+  var card = document.getElementById('block-error');
+  if (card.scrollIntoView) {
+    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 }
 
 function showLoading() {
@@ -2077,7 +2315,7 @@ function showLoading() {
   var area = document.getElementById('result-area');
   area.hidden = false;
 
-  // 六块结果 + 空状态全部收起来：转圈期间界面只留转圈，干净
+  /* 六块结果 + 空状态 + 错误卡全部收起来：转圈期间界面只留转圈，干净 */
   hideAllBlocks();
   document.getElementById('block-loading').hidden = false;
 
@@ -2123,13 +2361,21 @@ function cancelRunning() {
   showEmpty();
 }
 
-/* 六块结果错峰淡入。抽成函数是因为"加载完成后"和"切换方案时"都要用到。 */
+/* 结果块错峰淡入。抽成函数是因为"加载完成后"和"切换方案时"都要用到。
+
+   Day 13 改动（这里是加视图时最容易漏的一处）：
+     原来它无脑把【六块全部】hidden = false —— 加了视图之后这么干，
+     一点生成就会三个视图的内容一起堆在屏幕上，标签切了也像没切。
+     现在只让【当前视图】那几块淡入，其它视图的块保持藏着。 */
 function revealBlocks() {
+  hasResults = true;
+
   /* 每块比上一块晚 70 毫秒出现，看起来是"依次滑入"而不是"啪一下全冒出来"。
      用 CSS 动画（见 style.css 的 fade-up + .reveal 类），
      这里只负责把类加上、并清掉上一次的延迟，避免第二次生成时累积。 */
-  BLOCK_IDS.forEach(function (id, i) {
-    var el = document.getElementById(id);
+  var ids = VIEWS[currentView];
+  for (var i = 0; i < ids.length; i++) {
+    var el = document.getElementById(ids[i]);
     el.hidden = false;
     el.classList.remove('reveal');          // 先摘掉，才能重新触发动画
     el.style.animationDelay = '';           // 清掉上一次的延迟
@@ -2137,7 +2383,19 @@ function revealBlocks() {
     void el.offsetWidth;
     el.style.animationDelay = (i * 70) + 'ms';
     el.classList.add('reveal');
-  });
+  }
+
+  /* 其它视图的块确保是藏着的（比如上一轮看过"账本"，这一次生成后
+     它们不该还留在屏幕上）。 */
+  for (var j = 0; j < BLOCK_IDS.length; j++) {
+    if (ids.indexOf(BLOCK_IDS[j]) < 0) {
+      document.getElementById(BLOCK_IDS[j]).hidden = true;
+    }
+  }
+
+  // 视图标签栏：有结果了才配出现
+  document.getElementById('view-tabs').hidden = false;
+  syncViewTabs();
 }
 
 /* ---------- E2. 清空确认（Day 10 新增） ---------- */
@@ -2185,6 +2443,48 @@ function initApp() {
   // 城市输入框里按回车 = 点"添加"
   document.getElementById('to-city-input').addEventListener('keydown', function (e) {
     if (e.key === 'Enter') { e.preventDefault(); addCity(); }
+  });
+
+  /* ---------- 视图标签（Day 13） ----------
+     三个标签：点一下切视图。
+     除了鼠标点，还要管键盘 —— 标签组的标准做法是
+     【Tab 键在整组上只停一次，组内用左右方向键换】，
+     所以这里额外监听左右键，并且同步把焦点移到新选中的那个标签上。
+     （只让鼠标能切是偷懒，Tab 到不了 = 键盘用户完全用不了。） */
+  var viewTabs = document.querySelectorAll('#view-tabs .view-tab');
+  for (var vt = 0; vt < viewTabs.length; vt++) {
+    viewTabs[vt].addEventListener('click', function () {
+      switchView(this.getAttribute('data-view'), { replace: true });
+      /* replace: true —— 点标签切视图不往历史里堆。
+         理由：用户切了 3 次视图，再按"后退"却要退 3 次才回到上一页，很烦。
+         后退键留给"真正的页面级跳转"（用 #plan/#trip/#cost 之外的方式进来时）。 */
+    });
+
+    viewTabs[vt].addEventListener('keydown', function (e) {
+      var keys = { ArrowLeft: -1, ArrowRight: 1 };
+      var step = keys[e.key];
+      if (step === undefined) { return; }
+
+      e.preventDefault();
+      var list = [];
+      for (var q = 0; q < viewTabs.length; q++) { list.push(viewTabs[q]); }
+      var idx = list.indexOf(this);
+      var next = list[(idx + step + list.length) % list.length];   // 到头的绕回另一头
+      next.focus();
+      switchView(next.getAttribute('data-view'), { replace: true });
+    });
+  }
+
+  /* 地址栏的 hash 一变就跟着切视图。
+     为什么用 hashchange 而不是自己写路由器：地址一变就通知我，
+     这点需求它完全够用，还自动覆盖了"用户按后退键"这一种情况。 */
+  window.addEventListener('hashchange', function () {
+    var v = viewFromHash();
+    if (v !== currentView) {
+      /* skipHash: true —— 地址本来就已经是那个值了（是用户改的），
+         不要再往回写一遍，否则会把后退键的历史搞乱。 */
+      switchView(v, { skipHash: true });
+    }
   });
 
   // 天数、预算框里按回车 = 直接生成
@@ -2248,6 +2548,11 @@ function initApp() {
      而不是往下翻一片空白。这也是"四种页面状态"里最容易漏掉的那个：
      空状态不是没有状态，它本身就是一种要给用户看的状态。 */
   showEmpty();
+
+  /* 但地址栏如果带着 #trip / #cost（用户刷新页面、或点了别人发来的链接），
+     就把"下次生成后要看哪个视图"记下来。注意此刻还是空状态，
+     所以不能直接把结果块显示出来 —— 等生成完自然会落到那个视图。 */
+  currentView = viewFromHash();
 
   // 主题按钮：注意它【不受"清空重填"影响】——
   // 主题是长期偏好，跟本次填的城市天数不是一回事，所以不放进上面那个 reset 里。

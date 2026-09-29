@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>出行规划小助手｜预算内最合适的行程</title>
 
-  <!-- 后面的 ?v=20260925d 是"版本号"，不是路径。
+  <!-- 后面的 ?v=20260925e 是"版本号"，不是路径。
        作用：强迫浏览器在样式更新后重新下载 style.css。
        不加的话，浏览器会把旧的 CSS 存在本地反复用，
        结果就是"我明明改了样式，你打开却没变化"。
        注意：这仍然只是本地文件，不联网，离线照常可用。 -->
-  <link rel="stylesheet" href="style.css?v=20260925d">
+  <link rel="stylesheet" href="style.css?v=20260925e">
 
   <!-- 主题抢先应用：必须在 <body> 画出来之前执行，
        否则选了赛博主题的人刷新时会先闪一下白屏再变黑（很难受）。
@@ -186,13 +186,30 @@
       </div>
     </section>
 
-    <!-- ③ 结果区。四种状态里它同时装着三种（空 / 加载中 / 正常），
-           靠"哪一块可见"来切换：
+    <!-- ③ 结果区。四种状态（Day 13 起四种都有了独立的样子）：
              空     → #block-empty 可见，其余全部 hidden（页面一打开的默认样子）
              加载中 → #block-loading 可见
-             正常   → 下面六块可见
-             错误   → 字段下方红字提示，结果区退回"空" -->
+             错误   → #block-error 可见（Day 13 新增的独立错误卡片）
+             正常   → 按当前视图显示对应的那几块（见下面 #view-* 三个视图）
+
+           视图切换怎么做的（Day 13）：
+             三个视图容器 #view-plan / #view-trip / #view-cost，同一时刻只显一个；
+             切换靠顶部的三个标签按钮，同时把地址栏的 #plan / #trip / #cost 一起改掉。
+             改地址栏是为了白捡两件事：浏览器后退键能回上一个视图、刷新后停在同一视图。
+             没用路由库 —— 这点需求用 hashchange 就够，引库反而要多配一堆东西。 -->
     <section id="result-area">
+
+      <!-- 视图切换栏。用真 <button> + role="tablist"：
+             Tab 能走到、回车/空格能触发、读屏软件会播报"第几个标签、选中没选中"，
+             这些都是白捡的（跟 Day 12 的筛选栏一个道理）。 -->
+      <div class="view-tabs" id="view-tabs" role="tablist" aria-label="结果视图" hidden>
+        <button type="button" class="view-tab is-on" data-view="plan"
+                role="tab" id="tab-plan" aria-selected="true" aria-controls="view-plan">整体方案</button>
+        <button type="button" class="view-tab" data-view="trip"
+                role="tab" id="tab-trip" aria-selected="false" aria-controls="view-trip">每日行程</button>
+        <button type="button" class="view-tab" data-view="cost"
+                role="tab" id="tab-cost" aria-selected="false" aria-controls="view-cost">账本</button>
+      </div>
 
       <!-- 空状态（Day 8 第 2 周新增）：还没点过「生成方案」时的样子。
            为什么要有它 —— 原来这里是彻底不显示的，用户打开页面往下看是空的，
@@ -238,23 +255,31 @@
         </div>
       </div>
 
+      <!-- 错误状态（Day 13 新增）：输入不合格 / 算不出来时，结果区不再"默默退回空状态"，
+           而是明确写清楚【哪个字段错了、错在哪、怎么改】，并给一个按钮把焦点送回那个框。
+
+           为什么字段旁边的红字【也留着】：
+             字段红字贴着输入框，改起来近（不用滚上去又滚下来）；
+             这里这张卡片是"状态本身"要有个看得见的样子 —— 截图、给朋友看、读屏软件都在这一屏。
+             两个各管一头，所以都留。 -->
+      <div class="card error-card" id="block-error" hidden>
+        <div class="error-box" role="alert">
+          <span class="error-mark" aria-hidden="true">!</span>
+          <div class="error-body">
+            <p class="error-title" id="error-title">输入还有点问题</p>
+            <ul class="error-list" id="error-list"></ul>
+            <p class="error-tip">改好上面标红的地方，再点一次「生成方案」。</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ---------- 视图一：整体方案（Day 13） ---------- -->
+      <div class="view" id="view-plan">
       <div class="card" id="block-plans" hidden>
         <h2 class="card-title">① 整体方案对比</h2>
         <p class="card-note">下面几套方案是<b>把各种公共交通组合起来</b>算好的。每套的交通方式不同，
           天数安排和总花费也会跟着变 —— 挑一套合心意的，点按钮就能看它的详细行程。</p>
         <div id="plans-body" class="plans-wrap"></div>
-      </div>
-
-      <div class="card" id="block-itinerary" hidden>
-        <h2 class="card-title">② 每日行程</h2>
-        <div class="table-scroll">
-          <table class="data-table" id="table-itinerary">
-            <thead>
-              <tr><th>天数</th><th>城市</th><th>当天大致安排</th><th class="num">当天花费估算</th></tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
       </div>
 
       <div class="card" id="block-transport" hidden>
@@ -271,7 +296,25 @@
         </div>
         <div id="transport-notes"></div>
       </div>
+      </div><!-- /视图一 整体方案 -->
 
+      <!-- ---------- 视图二：每日行程（Day 13） ---------- -->
+      <div class="view" id="view-trip">
+      <div class="card" id="block-itinerary" hidden>
+        <h2 class="card-title">② 每日行程</h2>
+        <div class="table-scroll">
+          <table class="data-table" id="table-itinerary">
+            <thead>
+              <tr><th>天数</th><th>城市</th><th>当天大致安排</th><th class="num">当天花费估算</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      </div><!-- /视图二 每日行程 -->
+
+      <!-- ---------- 视图三：账本（Day 13） ---------- -->
+      <div class="view" id="view-cost">
       <div class="card" id="block-cost" hidden>
         <h2 class="card-title">④ 花费清单</h2>
         <div class="table-scroll">
@@ -309,6 +352,7 @@
         <div id="highlights-body"></div>
         <p class="field-note">参考：以上推荐的花费仅作参考，<b>未计入</b>上面的合计。</p>
       </div>
+      </div><!-- /视图三 账本 -->
 
     </section>
 
@@ -324,7 +368,7 @@
 
   <!-- 逻辑脚本：必须是普通 script（不能用 type="module"），否则双击打开时不会执行。
        末尾的 ?v= 是版本号，作用同上面的 style.css：改了脚本你才看得到变化。 -->
-  <script src="app.js?v=20260925d" defer></script>
+  <script src="app.js?v=20260925e" defer></script>
 
 </body>
 </html>

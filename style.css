@@ -1835,6 +1835,159 @@ html { overflow-x: hidden; }
 }
 
 /* ============================================================
+   结果区视图切换栏（Day 13）
+
+   三个标签：整体方案 / 每日行程 / 账本。
+   外形跟 Day 12 的筛选栏是一家人（同一套圆角和间距），
+   但观感更"重"一点 —— 它是页面级导航，不是列表内的小筛选。
+   ============================================================ */
+
+.view-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 20px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-2);
+  /* 跟着页面滚时贴在顶上，切完视图不用再滚回去找标签。
+     为什么用 sticky 而不是 fixed：fixed 会脱离文档流、把内容顶掉，
+     sticky 保持占位，只是"滚到顶就停住"。 */
+  position: sticky;
+  top: 12px;
+  z-index: 20;
+}
+
+/* ⚠️ 这里必须补一条 [hidden] 兜底：
+   作者样式里的 display: flex 优先级高于浏览器默认的 [hidden] { display: none }，
+   不写这条，没结果的时候标签栏照样会露出来。
+   （Day 10 给 .confirm-bar 写 display: flex 时踩过同一个坑。） */
+.view-tabs[hidden] { display: none; }
+
+.view-tab {
+  font: inherit;
+  font-size: 14.5px;
+  line-height: 1.4;
+  padding: 8px 22px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease),
+              color var(--dur-fast) var(--ease),
+              transform var(--dur-fast) var(--ease);
+}
+
+.view-tab:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+/* 选中态：实心填充（跟筛选栏一个理由 —— 空心/实心的差别色弱用户也分得出来）。
+   放在 :hover 后面，特异性相同时后写的赢。 */
+.view-tab.is-on {
+  background: var(--brand);
+  color: var(--on-brand);
+  font-weight: 600;
+  box-shadow: var(--shadow-lift);
+}
+
+.view-tab.is-on:hover {
+  background: var(--brand);
+  color: var(--on-brand);
+  transform: translateY(-1px);
+}
+
+/* 焦点框只给键盘（鼠标点完不留圈） */
+.view-tab:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* 窄屏：三个标签平分一整行，字略小 */
+@media (max-width: 560px) {
+  .view-tabs { gap: 4px; padding: 5px; top: 8px; }
+  .view-tab { flex: 1; padding: 8px 6px; font-size: 13.5px; text-align: center; }
+}
+
+/* ============================================================
+   错误状态卡片（Day 13）
+
+   以前输入不合格只有字段下面一行红字，结果区默默退回"空"——
+   用户看不到"错误"这个状态本身，只看到页面又空了。
+   这张卡片就是为了让错误有个看得见的样子：哪几项不对 + 怎么改。
+   ============================================================ */
+
+.error-card {
+  /* 左边一条警示竖线，跟确认条（Day 10）用同一套视觉语言 */
+  box-shadow: inset 4px 0 0 0 var(--bad);
+}
+
+/* 顶部那条 3px 彩边也要换成红色。
+   为什么：.card::after 默认走 --edge（主色蓝/青紫渐变），
+   一张"出错了"的卡片顶着蓝色细边，跟卡片里的红字、红感叹号唱反调。 */
+.error-card::after {
+  background: var(--bad);
+}
+
+.error-box {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+/* 左侧的感叹号圆标：形状 + 颜色双重提示，不只靠颜色 */
+.error-mark {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  line-height: 26px;
+  text-align: center;
+  border-radius: 50%;
+  background: var(--bad);
+  color: var(--on-bad);
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.error-body { min-width: 0; }
+
+.error-title {
+  margin: 3px 0 10px;
+  font-size: 16.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.error-list {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 15px;
+  line-height: 1.75;
+  color: var(--ink-2);
+}
+
+.error-list b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.error-tip {
+  margin: 12px 0 0;
+  font-size: 13.5px;
+  color: var(--ink-3);
+}
+
+@media (max-width: 560px) {
+  .error-box { gap: 11px; }
+  .error-mark { width: 23px; height: 23px; line-height: 23px; font-size: 14px; }
+  .error-title { font-size: 15.5px; }
+  .error-list { font-size: 14.5px; }
+}
+
+/* ============================================================
    关键帧动画库（Day 8 追加）
 
    全部集中在这里，方便一处查看、一处调整。
