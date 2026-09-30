@@ -76,7 +76,13 @@ var CITY_HIGHLIGHTS = {
      fixed   ：固定附加费（元），模拟起步价 / 服务费
      minKm   ：短于这个距离就不列（太近了坐它没意义）
      maxKm   ：长于这个距离就不列（太远了坐它不现实）
-     nightOk ：该方式是否可能有过夜车次（可省一晚住宿） */
+     nightOk ：该方式是否可能有过夜车次（可省一晚住宿）
+     airportOnly ：只对"有机场的城市"出现（两头都得有机场）
+
+   飞机构造：0.7 元/公里 + 90 元（机建燃油）。按经济舱全价算 ——
+   学生党实际常能买到折扣票，但折扣不可预测，宁可算多不算少。
+   时速按 700 算，但要加上两头奔机场、安检、候机的时间，所以另给
+   AIRPORT_EXTRA_HOURS（见下），不能只按飞行时间。 */
 var TRANSPORT_MODES = {
   highspeed: {
     key: 'highspeed', mode: '高铁',
@@ -101,8 +107,40 @@ var TRANSPORT_MODES = {
     speed: 75, perKm: 0.55, fixed: 15,
     minKm: 0, maxKm: 400, nightOk: false,
     label: '跨城顺风车，一车多人分摊路费；价格随行情浮动'
+  },
+  plane: {
+    key: 'plane', mode: '飞机',
+    speed: 700, perKm: 0.70, fixed: 90,
+    minKm: 800, maxKm: Infinity, nightOk: false,
+    airportOnly: true,
+    label: '长途最快；票价按全价估算，提前买常能便宜'
   }
 };
+
+/* 飞机两头都要有机场才列出来。
+   这份清单只覆盖 CITY_COORDS 里的 24 城 —— 挑的是有民航客运机场的。
+   （洛阳、开封这类没有民航机场的城市就不在里面，它们不会出飞机选项。）
+   数据依据：各市是否有民航运输机场，属公开常识，不联网核实。 */
+var AIRPORT_CITIES = {
+  '北京': true, '上海': true, '广州': true, '深圳': true,
+  '武汉': true, '成都': true, '重庆': true, '西安': true,
+  '青岛': true, '杭州': true, '南京': true, '长沙': true,
+  '郑州': true, '昆明': true, '贵阳': true, '南昌': true,
+  '厦门': true, '兰州': true, '天津': true, '沈阳': true,
+  '哈尔滨': true, '银川': true
+  // 洛阳、开封：无民航客运机场
+};
+
+/* 坐飞机要多花的时间（小时）：往机场 + 安检 + 候机 + 落地后进城。
+   不加这个的话，800 公里飞机只算 1.1 小时，比高铁还快得不真实 ——
+   现实中两头折腾至少多花 3 小时。 */
+var AIRPORT_EXTRA_HOURS = 3;
+
+/* 两个城市是否都有机场（都满足才可能出飞机选项） */
+function bothHaveAirport(fromCity, toCity) {
+  return !!(AIRPORT_CITIES[fromCity] && AIRPORT_CITIES[toCity]);
+}
+
 
 /* 常见城市的大致坐标（只用于估算距离，不画地图、不联网） */
 var CITY_COORDS = {
@@ -165,6 +203,8 @@ function estimateTransport(fromCity, toCity) {
 
   var km = distanceKm(a, b) * RAIL_DETOUR;   // 换算成公路/铁路里程（估算）
 
+  var canFly = bothHaveAirport(fromCity, toCity);
+
   var options = [];
   Object.keys(TRANSPORT_MODES).forEach(function (k) {
     var t = TRANSPORT_MODES[k];
@@ -172,7 +212,13 @@ function estimateTransport(fromCity, toCity) {
     // 超出这种方式适合的距离范围 → 不列
     if (km < t.minKm || km > t.maxKm) return;
 
+    // 飞机要求两头都有机场 → 不满足就不列
+    if (t.airportOnly && !canFly) return;
+
     var hours = Math.max(0.5, km / t.speed);
+    // 飞机要另加两头折腾的时间（奔机场 + 安检 + 候机 + 落地进城）
+    if (t.airportOnly) hours += AIRPORT_EXTRA_HOURS;
+
     // 票价按 5 元取整，避免出现 137 元这种假精确的数字
     var price = Math.round((km * t.perKm + t.fixed) / 5) * 5;
 
@@ -219,9 +265,11 @@ function round1(n) { return Math.round(n * 10) / 10; }
    规则：
      1. 一段城际交通耗时 ≥ 6 小时 → 占 1 整天
      2. 可用于游玩的天数 = 总天数 − 各段占用的整天数之和
+        （含【返程】那一段：玩完要回家，回家的路一样占时间）
      3. 可用于游玩的天数 < 城市数 → 报错 E4
      4. 平均分配；余数按城市顺序从前到后各加 1 天
      5. 占 1 整天的交通段单独成行，写「在途：A → B」
+   路线：出发地 → 城市1 → … → 城市N → 【回出发地】
    ============================================================ */
 
 function splitDays(fromCity, cities, totalDays) {
@@ -246,6 +294,21 @@ function splitDays(fromCity, cities, totalDays) {
     prev = cities[i];
   }
 
+  // 最后一段：从最后一个城市回家（返程）。
+  // 不带这段的话，用户按单程预算出门，回来一定要超支。
+  var backEst = estimateTransport(prev, fromCity);
+  var backFastest = backEst.options[0];
+  var backOccupies = backFastest.hours >= 6 ? 1 : 0;
+  transitDays += backOccupies;
+
+  legs.push({
+    from: prev,
+    to: fromCity,
+    estimate: backEst,
+    occupiesWholeDay: backOccupies === 1,
+    isReturn: true
+  });
+
   var playableDays = totalDays - transitDays;
 
   // 校验：可用于游玩的天数不足
@@ -253,8 +316,9 @@ function splitDays(fromCity, cities, totalDays) {
     return {
       ok: false,
       errorCode: 'E4',
-      message: '去 ' + cities.length + ' 个城市至少需要 ' + cities.length +
-               ' 天（不含路上），请增加天数或减少城市'
+      message: '去 ' + cities.length + ' 个城市，路上至少要占 ' + transitDays +
+               ' 天（含返程），只剩 ' + Math.max(0, playableDays) + ' 天可玩，不够分。' +
+               '请增加天数或减少城市'
     };
   }
 
@@ -282,6 +346,7 @@ function splitDays(fromCity, cities, totalDays) {
 /* 按「指定的交通方式组合」重算一遍行程天数。
    pickKeys：每段用哪种方式，例如 ['cheapest','highspeed','normal']
    —— 不加这个的话，换交通方式后天数不会变，用户就看不到"省钱的代价"。
+   ★ 注意：pickKeys 的长度 = 城市数 + 1（最后一个是返程那段）。
    totalDays 传进来的是【总天数】，这是 PRD 的固定口径。 */
 function splitDaysWithModes(fromCity, cities, totalDays, pickKeys) {
   var legs = [];
@@ -312,10 +377,30 @@ function splitDaysWithModes(fromCity, cities, totalDays, pickKeys) {
     prev = cities[i];
   }
 
+  // 返程段：从最后一个城市回出发地（pickKeys 的最后一位是它）
+  var backLeg = { from: prev, to: fromCity, estimate: estimateTransport(prev, fromCity) };
+  var backKey = pickKeys[cities.length];
+  var backChosen;
+  if (backKey === 'cheapest') {
+    backChosen = cheapestOption(backLeg);
+  } else {
+    backChosen = pickOption(backLeg, backKey);
+  }
+  backLeg.chosen = backChosen;
+  var backOccupies = backChosen.hours >= 6 ? 1 : 0;
+  backLeg.occupiesWholeDay = backOccupies === 1;
+  backLeg.chosenWholeDay = backOccupies === 1;
+  backLeg.isReturn = true;
+  transitDays += backOccupies;
+  legs.push(backLeg);
+
   var playableDays = totalDays - transitDays;
   if (playableDays < cities.length) {
     return { ok: false, errorCode: 'E4', legs: legs, transitDays: transitDays,
-             playableDays: playableDays };
+             playableDays: playableDays,
+             message: '去 ' + cities.length + ' 个城市，路上至少要占 ' + transitDays +
+                      ' 天（含返程），只剩 ' + Math.max(0, playableDays) + ' 天可玩，不够分。' +
+                      '请增加天数或减少城市' };
   }
 
   var base = Math.floor(playableDays / cities.length);
@@ -456,8 +541,9 @@ function buildPlans(input) {
   var plans = [];
 
   /* ---------- 方案 1：最省 ---------- */
+  // pickKeys 比城市数多一位 —— 最后那位是【返程段】
   var cheapKeys = [];
-  for (var i = 0; i < cities.length; i++) cheapKeys.push('cheapest');
+  for (var i = 0; i <= cities.length; i++) cheapKeys.push('cheapest');
   var cheapSplit = splitDaysWithModes(fromCity, cities, totalDays, cheapKeys);
   if (cheapSplit.ok) {
     var cheapCost = calcCost(cheapSplit.legs, totalDays);
@@ -478,6 +564,7 @@ function buildPlans(input) {
   var valueKeys = [];
   var valueLegsProbe = [];
   var prev = fromCity;
+  // 去程各段
   for (var k = 0; k < cities.length; k++) {
     var probeLeg = { from: prev, to: cities[k], estimate: estimateTransport(prev, cities[k]) };
     var chosen = bestValueOption(probeLeg);
@@ -485,6 +572,12 @@ function buildPlans(input) {
     valueLegsProbe.push(probeLeg);
     prev = cities[k];
   }
+  // 返程段：跟去程同一套性价比逻辑
+  var backProbeLeg = { from: prev, to: fromCity, estimate: estimateTransport(prev, fromCity) };
+  var backChosenProbe = bestValueOption(backProbeLeg);
+  valueKeys.push(backChosenProbe.key);
+  valueLegsProbe.push(backProbeLeg);
+
   var valueSplit = splitDaysWithModes(fromCity, cities, totalDays, valueKeys);
   if (valueSplit.ok) {
     var valueCost = calcCost(valueSplit.legs, totalDays);
@@ -860,6 +953,304 @@ function showErrors(errors) {
 
 /* ---------- B. 渲染 ---------- */
 
+/* B1-b 「当天大致安排」这一格怎么画（Day 15 新增）
+
+   同一个单元格有两种模样，靠 editingRowKey 决定画哪种：
+     · 只读态：文字 + （用户改过就显示「已改」）+「编辑」按钮
+     · 编辑态：每条安排一个输入框，各带 上移/下移/删除；底部「加一条」；「完成」「取消」
+
+   为什么"编辑"入口做成一格的按钮、而不是让用户直接点文字改：
+     · 直接点文字就改（contenteditable）在手机上很容易误触 ——
+       用户想滚动页面，手指一划就进了编辑状态，还弹出键盘。
+     · 这个项目的行里本来就有「展开看这 N 条」按钮，再加一个按钮最自然。
+     · 编辑态里能塞下"改安排不会改动花费"这句说明；直接可编辑的话没地方放。 */
+function renderDetailCell(td, row) {
+  var key = rowKeyOf(row);
+  var editing = (editingRowKey === key);
+  var items = itemsForRow(row);
+
+  /* ⚠️ 这里【不能】去操作 tr（td.parentNode）：此刻这个 td 还没被 append 到 tr 上，
+     parentNode 是 null，"给整行加底色"的样式挂不上（Day 15 踩过，表现是
+     编辑态开出来了、但行底色没变）。
+     整行的类统一由 renderItinerary 在 append 之后挂。 */
+
+  /* ---------- 在途行：不给编辑入口 ----------
+     在途只可能是"全天在路上（普速 约 11.7 小时）"这一句，
+     它由算法算出来的，改它没有意义（改完也算不出别的路）。
+     给一个点了没用的按钮，比不给更差。 */
+  if (row.type === 'transit') {
+    var t = document.createElement('span');
+    t.className = 'row-detail';
+    t.textContent = items.length > 0 ? items[0] : '全天在路上';
+    td.appendChild(t);
+    return;
+  }
+
+  if (editing) {
+    renderDetailEditor(td, row, items);
+    return;
+  }
+
+  /* ---------- 只读态 ---------- */
+  if (items.length === 0) {
+    var empty = document.createElement('span');
+    empty.className = 'row-detail row-detail-empty';
+    empty.textContent = hasPlanHint(row.label)
+      ? '这天还没安排（内置建议已排完，点「编辑」可以自己加）'
+      : '这天还没安排（该城市暂无内置建议，点「编辑」可以自己加）';
+    td.appendChild(empty);
+  } else {
+    /* 正文外面套一个块级 span（Day 11）：
+       这样后面那个展开按钮会自己换到下一行，不用在 JS 里塞 <br>。 */
+    var detailText = document.createElement('span');
+    detailText.className = 'row-detail';
+    /* 「到达 + 」前缀：只在"这座城市的第一天"加上，而且是渲染时临时加的 ——
+       不写进 items 里。为什么：用户编辑时看到一串内容，若前缀也在里面，
+       他会以为那是自己内容的一部分，删了就再也回不来。 */
+    var body = items.join('；');
+    if (isFirstDayOfCity(row)) { body = '到达 + ' + body; }
+    detailText.textContent = body;
+    td.appendChild(detailText);
+  }
+
+  // 用户改过的标记：让他一眼看出"这行不是 AI 原来的建议"
+  if (isRowEdited(row)) {
+    var badge = document.createElement('span');
+    badge.className = 'edited-badge';
+    badge.textContent = '已改';
+    badge.title = '这一天的安排你改过';
+    td.appendChild(badge);
+  }
+
+  // 「编辑」按钮
+  var editBtn = document.createElement('button');
+  editBtn.type = 'button';
+  editBtn.className = 'edit-btn';
+  editBtn.setAttribute('aria-label', row.label + ' 第 ' + (row.cityDayIndex + 1) + ' 天的安排，进入编辑');
+  editBtn.textContent = '编辑';
+  editBtn.addEventListener('click', function () {
+    /* ⚠️ 顺序不能反：editDraft 必须先算好，再设 editingRowKey。
+       反过来的话，itemsForRow 会走"编辑态"那条分支去读草稿，
+       而此刻草稿还是上一次的（或 null），拷进来的就是错的东西。 */
+    editDraft = itemsForRow(row);
+    editingRowKey = key;
+    repaintItinerary();
+    /* 把焦点送进第一个输入框 —— 键盘用户点了编辑就能直接打字，
+       不用再 Tab 一圈找输入框。 */
+    var tbody = document.getElementById('table-itinerary').querySelector('tbody');
+    var tr = tbody.querySelector('tr[data-row-key="' + cssEscape(key) + '"]');
+    if (tr) {
+      var first = tr.querySelector('.edit-input');
+      if (first) { first.focus(); }
+    }
+  });
+  td.appendChild(editBtn);
+}
+
+/* 判断这一行是不是"该城市的第一天"（用来决定要不要加「到达 + 」）
+   只看 row.cityDayIndex 就够了 —— 同一城市的天是连续的、从 0 开始。
+   ⚠️ 别拿"整张表第几行"来判：在途行夹在中间，两种编号根本对不上。 */
+function isFirstDayOfCity(row) {
+  return row.cityDayIndex === 0;
+}
+
+/* 画编辑态（Day 15） */
+function renderDetailEditor(td, row, items) {
+  var key = rowKeyOf(row);
+
+  var wrap = document.createElement('div');
+  wrap.className = 'edit-list';
+  wrap.setAttribute('data-edit-key', key);
+
+  // 顶部说明：为什么改安排不动花费（对应 ②A 的选择）
+  var tip = document.createElement('p');
+  tip.className = 'edit-tip';
+  tip.textContent = '改这里只改安排内容；当天的花费是按时天固定标准估的，不会跟着变。';
+  wrap.appendChild(tip);
+
+  for (var i = 0; i < items.length; i++) {
+    wrap.appendChild(buildEditRow(row, items, i));
+  }
+
+  // 空的时候给一句，别让用户面对一片空白
+  if (items.length === 0) {
+    var none = document.createElement('p');
+    none.className = 'edit-empty';
+    none.textContent = '这一天还没有安排，点下面的「加一条」自己加。';
+    wrap.appendChild(none);
+  }
+
+  // 「加一条」
+  var addBtn = document.createElement('button');
+  addBtn.type = 'button';
+  addBtn.className = 'btn btn-quiet edit-add';
+  addBtn.textContent = '+ 加一条';
+  /* 「加一条」= 往草稿里塞一条空的 + 重画。
+     ⚠️ 这里【不碰存档】。若写进存档，用户随后点「取消」就取消不掉了 ——
+        存档已经被污染，而「取消」的语义是"这次编辑整个不要了"（Day 15 踩过）。
+     另外要先把输入框里已有的字读回草稿：用户可能改了几个字还没提交，
+        不读回来的话这次重画会把那些改动冲掉。 */
+  addBtn.addEventListener('click', function () {
+    var cur = readEditorItems(row);
+    cur.push('');
+    editDraft = cur;
+    repaintItinerary();
+  });
+  wrap.appendChild(addBtn);
+
+  // 底部：完成 / 取消
+  var actions = document.createElement('div');
+  actions.className = 'edit-actions';
+
+  var doneBtn = document.createElement('button');
+  doneBtn.type = 'button';
+  doneBtn.className = 'btn btn-primary';
+  doneBtn.textContent = '完成';
+  /* 「完成」= 把草稿落进存档（顺便把空条目过滤掉），退出编辑态。
+     这里是【唯一】写存档的地方 —— 进来之后所有动作都只改草稿。 */
+  doneBtn.addEventListener('click', function () {
+    commitRowEdit(row, readEditorItems(row));
+  });
+
+  var cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'btn btn-quiet';
+  cancelBtn.textContent = '取消';
+  /* 「取消」= 丢掉草稿、退出编辑态。存档一个字节都没动过，
+     所以重画之后自然就回到"进来之前"的样子。
+     （正因为编辑期间从不写存档，这里才能这么简单。） */
+  cancelBtn.addEventListener('click', function () {
+    editingRowKey = null;
+    editDraft = null;
+    repaintItinerary();
+  });
+
+  actions.appendChild(doneBtn);
+  actions.appendChild(cancelBtn);
+  wrap.appendChild(actions);
+
+  td.appendChild(wrap);
+}
+
+/* 编辑态里的一行：输入框 + 上移 / 下移 / 删除 */
+function buildEditRow(row, items, i) {
+  var line = document.createElement('div');
+  line.className = 'edit-line';
+
+  var input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'edit-input';
+  input.value = items[i];
+  input.setAttribute('aria-label', '第 ' + (i + 1) + ' 条安排');
+  line.appendChild(input);
+
+  var tools = document.createElement('div');
+  tools.className = 'edit-tools';
+
+  // 上移（第一条不给 —— 给了也没用，禁用比隐藏更能说明"到头了"）
+  var up = document.createElement('button');
+  up.type = 'button';
+  up.className = 'edit-mini';
+  up.textContent = '↑';
+  up.setAttribute('aria-label', '第 ' + (i + 1) + ' 条上移');
+  up.disabled = (i === 0);
+  up.addEventListener('click', function () {
+    var cur = readEditorItems(row);
+    swapItem(cur, i, i - 1);
+    editDraft = cur;
+    repaintItinerary();
+  });
+
+  var down = document.createElement('button');
+  down.type = 'button';
+  down.className = 'edit-mini';
+  down.textContent = '↓';
+  down.setAttribute('aria-label', '第 ' + (i + 1) + ' 条下移');
+  down.disabled = (i === items.length - 1);
+  down.addEventListener('click', function () {
+    var cur = readEditorItems(row);
+    swapItem(cur, i, i + 1);
+    editDraft = cur;
+    repaintItinerary();
+  });
+
+  var del = document.createElement('button');
+  del.type = 'button';
+  del.className = 'edit-mini edit-del';
+  del.textContent = '×';
+  del.setAttribute('aria-label', '删掉第 ' + (i + 1) + ' 条');
+  del.addEventListener('click', function () {
+    var cur = readEditorItems(row);
+    cur.splice(i, 1);
+    editDraft = cur;
+    repaintItinerary();
+  });
+
+  tools.appendChild(up);
+  tools.appendChild(down);
+  tools.appendChild(del);
+  line.appendChild(tools);
+
+  return line;
+}
+
+function swapItem(arr, a, b) {
+  if (a < 0 || b < 0 || a >= arr.length || b >= arr.length) { return; }
+  var tmp = arr[a]; arr[a] = arr[b]; arr[b] = tmp;
+}
+
+/* 把编辑框里的内容读出来（要读 DOM 而不是闭包 —— 闭包在重画后会指错行） */
+function readEditorItems(row) {
+  var out = [];
+  var tbody = document.getElementById('table-itinerary').querySelector('tbody');
+  var tr = tbody.querySelector('tr[data-row-key="' + cssEscape(rowKeyOf(row)) + '"]');
+  if (!tr) { return itemsForRow(row); }
+  var inputs = tr.querySelectorAll('.edit-input');
+  for (var i = 0; i < inputs.length; i++) { out.push(inputs[i].value); }
+  return out;
+}
+
+/* 【唯一】往存档里写的地方：点「完成」时调这个（Day 15）
+   编辑期间的所有动作都只改草稿、不碰存档 —— 这样「取消」才有东西可取消。
+
+   为什么要过滤空白条目：用户点开编辑、又不想加东西，会留下空输入框，
+   若原样存下来，只读态会看到"；；"这种空条。
+   过滤在【存之前】做，这样"存进存档的东西"永远是可以直接显示的。 */
+function commitRowEdit(row, items) {
+  var key = rowKeyOf(row);
+
+  var cleaned = items.filter(function (s) { return String(s).trim() !== ''; })
+                     .map(function (s) { return String(s).trim(); });
+
+  itineraryEdits[key] = { items: cleaned, dirty: true };
+  saveItineraryEdits();
+
+  editingRowKey = null;   // 退出编辑态
+  editDraft = null;
+  repaintItinerary();
+}
+
+/* 只重画行程表那一块（不重新算、不动其他块）。
+   为什么单独抽出来：编辑态里的每次增删改都只需要刷新这一张表，
+   走一遍完整 generate 会重新校验、重新算钱、还会闪一下加载态 —— 太重。 */
+function repaintItinerary() {
+  if (!lastInput || !lastPlans) { return; }
+  var plan = null;
+  for (var i = 0; i < lastPlans.length; i++) {
+    if (lastPlans[i].id === activePlanId) { plan = lastPlans[i]; }
+  }
+  if (!plan) { plan = lastPlans[0]; }
+  renderItinerary(plan.split, lastInput);
+}
+
+/* 把 key 安全地放进 CSS 属性选择器里。
+   为什么要转义：key 里带城市名（c:成都:0），还带 > （t:武汉>成都），
+   直接拼进 [data-row-key="..."] 里，某些字符会让选择器解析失败。 */
+function cssEscape(s) {
+  if (typeof CSS !== 'undefined' && CSS.escape) { return CSS.escape(s); }
+  return String(s).replace(/["\\\]]/g, '\\$&');
+}
+
 /* B1 每日行程 */
 /* B1 每日行程
    Day 7 改进（用户反馈"西安三天只有三个选项"）：
@@ -872,6 +1263,19 @@ function showErrors(errors) {
 function renderItinerary(split, input) {
   var tbody = document.getElementById('table-itinerary').querySelector('tbody');
   tbody.innerHTML = '';
+
+  /* Day 15：重画之前先记下"这次一共有哪些行"，画完再回头核对。
+     为什么要核对：editingRowKey 可能指向【已经不存在的行】——
+     比如用户正编辑"成都第 3 天"，此时改了天数、或切了方案，
+     就没有"成都第 3 天"这一行了。
+     若不处理，renderDetailCell 里 `editingRowKey === key` 永远不成立，
+     用户再也进不去编辑态：点「编辑」没反应，还不报错（查起来很费劲）。
+
+     ⚠️ 不能在这里直接 `editingRowKey = null` —— 那会把"点编辑"本身也一起干掉：
+        点「编辑」的动作就是【先设 editingRowKey、再重画】，
+        一进来就清掉，编辑态永远打不开（这个错真犯过一次）。
+        所以只能"画完之后按结果核对"，不能"开工前一律清空"。 */
+  var liveKeys = {};
 
   // ① 把"占整天"的交通段，按顺序插进行程里
   //    规则：占整天的段单独成行；不占整天的段，先进城再游玩
@@ -886,7 +1290,8 @@ function renderItinerary(split, input) {
       rows.push({
         type: 'transit',
         label: '在途：' + leg.from + ' → ' + leg.to,
-        detail: '全天在路上（' + chosen.mode + ' 约 ' + chosen.hours + ' 小时）',
+        // 在途行的内容也当"一条"存，好让整套数据结构一致
+        items: ['全天在路上（' + chosen.mode + ' 约 ' + chosen.hours + ' 小时）'],
         cost: 0
       });
     }
@@ -896,6 +1301,11 @@ function renderItinerary(split, input) {
     for (var k = 0; k < split.plan.length; k++) {
       if (split.plan[k].city === leg.to) { cityDays = split.plan[k].days; break; }
     }
+
+    // ⚠️ 返程段的"目的地"是出发地，不是要游玩的城市 —— 直接跳过补天数那一段。
+    //    不能只靠"plan 里查不到"来兜底：万一用户把出发地也填成想去的城市，
+    //    返程段就会被当成"又去了一趟出发地"而多出游玩行（对应 AC6 行数校验）。
+    if (leg.isReturn) { cityDays = 0; }
 
     var city = leg.to;
 
@@ -928,22 +1338,19 @@ function renderItinerary(split, input) {
     for (var d = 0; d < cityDays; d++) {
       var slice = pool.slice(d * perDay, (d + 1) * perDay);
 
-      // 第一天到得晚，先写"到达"，再排当天的内容
-      var detail;
-      if (slice.length === 0) {
-        detail = hasPlanHint(city)
-          ? '这天还没安排（内置建议已排完，可在下面"美食美景清单"里自己加）'
-          : '这天还没安排（该城市暂无内置建议，可在下面"美食美景清单"里自己加）';
-      } else {
-        detail = slice.map(function (x) { return x.text; }).join('；');
-        if (d === 0) detail = '到达 + ' + detail;
-      }
+      /* Day 15：这里不再拼成一个字符串，而是留一份【条目数组】items。
+         为什么必须拆开：用户要"自行增删改"每一条安排，
+         一个拼好的字符串（"宽窄巷子；熊猫基地"）没法单独删掉其中一条。
+         注意两个东西【不进 items】，它们是渲染时临时加的外观：
+           · "到达 + " 前缀   → 渲染时按"是不是这座城市的第一天"决定加不加
+           · "这天还没安排…"  → items 为空时的占位文案
+         让它们留在 items 里的话，用户会以为自己填的内容里真带着这几个字。 */
+      var items = slice.map(function (x) { return x.text; });
 
       // 最后一天：如果内容没排完，如实告诉用户"还剩几条没排进去"
       //   为什么必须说：用户自己加的地点若因为天数不够被吞掉，他会以为"加了没用"
       // 最后一天：如果内容没排完，把"没排上的那几条"挂在这一行上（Day 11 改成可展开）
-      //   为什么必须说：用户自己加的地点若因为天数不够被吞掉，他会以为"加了没用"
-      //   为什么从"一句话"改成"可展开"（Day 11）：
+      //   为什么从"一句话"改成"可展开"：
       //     原来只报个数（"还有 2 条建议没排下"），用户知道有东西被扔了、
       //     却看不到被扔的是什么 —— 等于程序算完又藏起来。
       //     展开能看见具体是哪几条，这句话才算说完。
@@ -962,11 +1369,18 @@ function renderItinerary(split, input) {
       rows.push({
         type: 'city',
         label: city,
-        detail: detail,
+        // 这一行是这座城市待的第几天（从 0 数）—— 算稳定 key 要用，Day 15
+        cityDayIndex: d,
+        cityDays: cityDays,
+        // 可编辑的内容本身
+        items: items,
         // 这一行"没排下的建议"（Day 11）：没有就是 null，渲染时也就不出展开按钮
         more: more,
         // 当天花费：市内交通 + 吃 + 门票（住宿不按天摊，它按"晚"单独算）
         //   注意：这里【不含】自填地点的花费，避免和"门票"那一项重复计算
+        //   ⚠️ Day 15：这个数是【固定公式】算的，跟上面 items 写了什么无关。
+        //      用户改行程不会改动它 —— 界面上要写清这一点，否则用户会以为
+        //      把"熊猫基地"改成"迪士尼"门票就变了。
         cost: PRICES.cityTransferPerDay + PRICES.foodPerDay + PRICES.ticketPerDay,
         hasSelf: slice.some(function (x) { return x.self; })
       });
@@ -980,6 +1394,13 @@ function renderItinerary(split, input) {
     //       那样后一次会把前一次覆盖掉（曾导致 row-transit 风格丢失）
     if (row.type === 'transit') tr.classList.add('row-transit');
     if (row.hasSelf) tr.classList.add('row-has-self');
+    if (isRowEdited(row)) tr.classList.add('row-edited');
+    // 正在编辑的这一行：整行加底色，让用户一眼看出"改的是哪一天"
+    if (editingRowKey === rowKeyOf(row)) tr.classList.add('is-editing');
+    // 把"行 key"存到 DOM 上（Day 15）：编辑按钮不用闭包变量认行，
+    //   靠 data-row-key 找回自己那一行 —— 重画后闭包会指错，这个坑踩过两次。
+    tr.setAttribute('data-row-key', rowKeyOf(row));
+    liveKeys[rowKeyOf(row)] = true;
 
     var td1 = document.createElement('td');
     td1.className = 'col-day';
@@ -997,14 +1418,10 @@ function renderItinerary(split, input) {
     td2.textContent = row.label;
 
     var td3 = document.createElement('td');
-
-    /* 正文外面套一个块级 span（Day 11）：
-       这样后面那个展开按钮会自己换到下一行，不用在 JS 里塞 <br>，
-       也不用给按钮写一堆奇怪的外边距去硬凑。 */
-    var detailText = document.createElement('span');
-    detailText.className = 'row-detail';
-    detailText.textContent = row.detail;
-    td3.appendChild(detailText);
+    /* Day 15：详情单元格整个交给一个函数去画 ——
+       因为它在"两种模样"之间切换（只读 / 编辑），还要能原地重画自己。
+       写在循环里会让这段越来越长，抽出去更好读。 */
+    renderDetailCell(td3, row);
 
     /* 这一天"没排下的建议"：默认藏起来，点一下才看（Day 11）
        反馈设计说明：
@@ -1075,6 +1492,17 @@ function renderItinerary(split, input) {
     tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tr.appendChild(td4);
     tbody.appendChild(tr);
   }
+
+  /* 画完了，回头核对"正在编辑的那一行"还在不在（见函数开头那段说明）。
+     不在 → 作废，免得 editingRowKey 卡在一个永远匹配不上的 key 上。
+     在 → 原样留着，编辑态自然是开着的。
+     ⚠️ 草稿要一起清掉：留在那儿的草稿是【上一批数据】的，一旦以后
+        又匹配上同名 key（比如又出现了 c:成都:0），用户点开会看到
+        旧草稿的内容 —— 那是错的内容，比没有更糟。 */
+  if (editingRowKey !== null && !liveKeys[editingRowKey]) {
+    editingRowKey = null;
+    editDraft = null;
+  }
 }
 
 /* B2 城际交通对比：每一段路，把它所有可行方式都列出来
@@ -1107,8 +1535,9 @@ function renderTransport(split, chosenKeys) {
     headTr.className = 'row-seg-head';
     var headTd = document.createElement('td');
     headTd.colSpan = 5;
-    headTd.textContent = '第 ' + (i + 1) + ' 段：' + leg.from + ' → ' + leg.to +
-      '（约 ' + leg.estimate.km + ' 公里）';
+    // 返程段单独称呼，别叫「第 N 段」—— 它是"回家"，性质不一样
+    headTd.textContent = (leg.isReturn ? '返程：' : '第 ' + (i + 1) + ' 段：') +
+      leg.from + ' → ' + leg.to + '（约 ' + leg.estimate.km + ' 公里）';
     headTr.appendChild(headTd);
     tbody.appendChild(headTr);
 
@@ -1155,12 +1584,14 @@ function renderTransport(split, chosenKeys) {
     if (fastest !== cheapest) {
       var saveMoney = fastest.price - cheapest.price;
       var saveTime = round1(cheapest.hours - fastest.hours);
-      note.textContent = '这段坐' + fastest.mode + '最快（' + fastest.hours +
+      note.textContent = (leg.isReturn ? '回程这段坐' : '这段坐') + fastest.mode +
+        '最快（' + fastest.hours +
         ' 小时、约 ¥' + fastest.price + '）；改坐' + cheapest.mode + '能省约 ¥' +
         saveMoney + '，但要多花约 ' + saveTime + ' 小时。' +
         (leg.occupiesWholeDay ? '这段耗时较长，整天在路上，行程里已单独占一天。' : '');
     } else {
-      note.textContent = '这段只有' + fastest.mode + '一种可行方案（约 ' + fastest.hours +
+      note.textContent = (leg.isReturn ? '回程这段只有' : '这段只有') + fastest.mode +
+        '一种可行方案（约 ' + fastest.hours +
         ' 小时、约 ¥' + fastest.price + '）。' +
         (leg.occupiesWholeDay ? '耗时较长，整天在路上，行程里已单独占一天。' : '');
     }
@@ -1376,6 +1807,11 @@ function switchPlan(planId) {
 
   activePlanId = planId;
 
+  /* 换了一套方案 → 退出"正在编辑某一行"的状态（Day 15）。
+     理由同 generate()：换的是整批行，编辑态不该跨过去。
+     （用户的修改仍然保留 —— 它们在 itineraryEdits 里，跟这个状态无关。） */
+  exitRowEditing();
+
   var chosenKeys = [];
   for (var k = 0; k < picked.legs.length; k++) {
     chosenKeys.push(picked.legs[k].chosen.key);
@@ -1387,20 +1823,22 @@ function switchPlan(planId) {
     cheaperPlan: cheaperOf(lastPlans, picked)
   });
 
-  /* Day 13：只重画"当前视图里那几块"。
-     以前是无条件把五块都重画一遍 —— 加了视图之后这么干有两处浪费：
-       ① 用户人在"账本"视图，切方案时把"整体方案"那两张表也重画了，白干
-       ② 重画会把已经隐藏的块重新填内容，将来若有人改了显隐逻辑容易出岔子
-     注意 renderPlans 必须留着 —— 方案卡片本身就在"整体方案"视图里，
-     而切换方案时那张卡片上的"当前选中"标记得跟着变，
-     哪怕用户此刻不在那个视图（切回去要看到正确的选中态）。 */
-  renderPlans(lastPlans, activePlanId);
+  /* ⚠️ Day 14 修 bug：这里以前是"只重画当前视图里那几块"（if inView.indexOf(...)），
+     结果切方案在「整体方案」和「每日行程」两个视图里全都失效 —— 因为 currentView
+     是 'plan' 时 applyView 把 block-itinerary / block-cost / block-budget 都设成了
+     hidden=true，而切换方案时 currentView 并不会变成 'trip' 或 'cost'，
+     那三块就永远轮不到重画。表现：点「按这套重新算」，卡片上的选中标记变了、
+     "在路上 N 天"也变了，但下面的行程表 / 花费表还是旧方案的数字。
 
-  var inView = VIEWS[currentView];
-  if (inView.indexOf('block-itinerary') >= 0) { renderItinerary(picked.split, lastInput); }
-  if (inView.indexOf('block-transport') >= 0) { renderTransport(picked.split, chosenKeys); }
-  if (inView.indexOf('block-cost') >= 0) { renderCost(picked.cost); }
-  if (inView.indexOf('block-budget') >= 0) { renderBudget(verdict); }
+     现在改回**无条件全部重画**。为什么这样不浪费、也不出错：
+       · 重画只是往 hidden 的块里写内容 —— 不显示、不可见，用户完全无感；
+       · 下次切到这个视图时 applyView 把 hidden 一解开，看到的就已经是新方案的内容。
+     两张表的重画成本远低于"数字对不上"的代价，这里优先保证正确。 */
+  renderPlans(lastPlans, activePlanId);
+  renderItinerary(picked.split, lastInput);
+  renderTransport(picked.split, chosenKeys);
+  renderCost(picked.cost);
+  renderBudget(verdict);
 }
 
 /* 在若干方案里，找出比"当前这套"更便宜的那一套（用于超支建议） */
@@ -1713,7 +2151,144 @@ function clearSelfAddedStorage() {
   } catch (e) {}
 }
 
-/* ---------- 主题切换（Day 8 追加） ----------
+/* ---------- 行程可编辑（Day 15 新增） ----------
+
+   用户的原话："每日行程中大致安排那一列做成可上下交换式的，就是可自行增删改，
+   因为这只是你给出的方案，用户不一定喜欢你的安排，我们也要允许个性化的设计。"
+
+   设计上分三层，别混在一起：
+     ① 【AI 原稿】renderItinerary 算出来的 items —— 程序推荐的内容
+     ② 【用户修改】itineraryEdits 里按"行 key"存的 items —— 用户改过的
+     ③ 【最终显示】渲染时：有修改就用修改，没有就用原稿
+
+   为什么要分②③而不是"直接改掉原稿"：
+     renderItinerary 会在【切方案 / 重新生成 / 增删自填地点】时整块重画。
+     直接改原稿的话，下一次重画就把它洗掉了 —— 用户的修改等于没保存。
+     所以修改必须单独存一份，重画时把它"盖"回原稿上面。 */
+var itineraryEdits = {};
+
+/* 用户修改的存储 key。和自填地点分开存：
+   两者的"过期条件"不一样 —— 自填地点跟城市走、跟天数无关；
+   行程修改跟"哪一天"绑得很紧，换天数就可能对不上号。 */
+var EDITS_KEY = 'meng-vibe-coding:itineraryEdits';
+
+/* 当前正在编辑哪一行（行 key）。null = 没有行在编辑态。
+   为什么"一次只允许一行进编辑态"：
+     多行同时可编辑的话，用户改到一半切走、或者两行的输入框都在飘，
+     很容易出现"改了一半的算不算数"这种说不清的状态。一次一行最简单也最稳。
+   为什么放在函数外面：和 highlightFilter 同理 —— 重画时不该把它弄丢
+     （重画后要能回到"还在这行编辑"的状态）。 */
+var editingRowKey = null;
+
+/* 【草稿】正在编辑的这一行的内容（Day 15）
+
+   为什么需要它：编辑态里的每个动作（加一条 / 上移 / 删除）都要重画才能看到效果，
+   而重画必须有个"内容来源"。如果不给草稿，就只能
+     · 要么改存档 → 用户点「取消」也取消不掉（存档已经被污染）
+     · 要么读 DOM  → 每次操作都得先把输入框里的字抠出来，绕，而且
+                     "加一条空条目"这种动作在 DOM 里没有落点
+   有了草稿，三件事一次说清：
+     · 进编辑态 → 把当前内容拷进 draft
+     · 编辑期间 → 所有动作改 draft + 重画（渲染只看 draft）
+     · 点「完成」→ draft 落进存档；点「取消」→ 扔掉 draft，存档一字未动
+   ⚠️ 只在编辑态里有值；退出编辑态（完成/取消）后置回 null。 */
+var editDraft = null;
+
+/* 退出编辑态（丢掉草稿）。
+   什么时候调：任何"换了一批新数据"的动作 —— 重新生成 / 切方案 / 清空重填。
+   为什么必须退出：编辑态是绑在【当前这一批行】上的状态。
+     换了数据（比如重新生成），用户对"我正在编辑"的预期已经结束了，
+     而且那一行可能已经不存在。留着编辑态会让人莫名其妙：
+     看到一列输入框，却不知道自己刚才点的是哪儿。
+   ⚠️ 注意这跟"保留用户的修改"是两件事：
+     修改存在 itineraryEdits 里，不受影响（③A 照样成立）；
+     这里丢掉的只是"正在编辑"这个动作状态。 */
+function exitRowEditing() {
+  editingRowKey = null;
+  editDraft = null;
+}
+
+/* 算一行的稳定 key（用户修改就按这个 key 对号入座）。
+   为什么不用"第 N 天"当 key：天数一变，同一个"第 3 天"就换城市了，
+     用户的修改会莫名其妙跑到别的城市头上。
+   为什么这么设计：
+     · 在途行 → 't:武汉>成都'：这段路是唯一的，换方案也还是这段路
+     · 游玩行 → 'c:成都:0'  = 成都的第 1 天（从 0 数）
+       同一城市待 3 天就有 c:成都:0/1/2 三个 key。
+       这样"把成都第 1 天的安排改一改"，下次生成时只要成都还是待这么多天，
+       那条修改就还落在成都第 1 天上 —— 符合直觉。
+   副作用（要如实说）：城市少待一天，c:成都:2 就找不到位置了 → 那条修改
+     自然失效（丢弃）。这比"硬塞到别的天"要好，也不会让用户困惑。 */
+function rowKeyOf(row) {
+  if (row.type === 'transit') { return 't:' + row.label.replace('在途：', ''); }
+  return 'c:' + row.label + ':' + row.cityDayIndex;
+}
+
+/* 把本地存储里的行程修改读回来（页面打开时调一次） */
+function loadItineraryEdits() {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    var raw = localStorage.getItem(EDITS_KEY);
+    if (!raw) return;
+    var data = JSON.parse(raw);
+    /* 还要挡一层：本地存的东西不可信（用户可能手改过、也可能是旧版本存的）。
+       只要不是"正经对象"就丢掉 —— 数组 typeof 也是 'object'，得单独排掉。 */
+    if (data && typeof data === 'object' && !Array.isArray(data)) { itineraryEdits = data; }
+    else { itineraryEdits = {}; }
+  } catch (e) {
+    itineraryEdits = {};   // 存坏了就当没有，功能照常用（只是刷新后不保留）
+  }
+}
+
+/* 写回本地存储 */
+function saveItineraryEdits() {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(EDITS_KEY, JSON.stringify(itineraryEdits));
+  } catch (e) {
+    // 存不进去就算了：功能照常用，只是刷新后不保留
+  }
+}
+
+/* 清掉全部行程修改（点"清空重填"时用） */
+function clearItineraryEdits() {
+  itineraryEdits = {};
+  editingRowKey = null;
+  editDraft = null;
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.removeItem(EDITS_KEY);
+  } catch (e) {}
+}
+
+/* 取某一行"最终要显示的内容"：
+   编辑态 → 用草稿（editDraft）
+   否则   → 用户改过就用用户的，没改过就用 AI 原稿
+   ⚠️ 必须返回副本（slice），不能让调用方直接改到存档/原稿里那份 ——
+      那样"取消编辑"就没法还原了（改的已经是存档本身了）。 */
+function itemsForRow(row) {
+  /* 编辑态里一律看草稿，而且【不过滤空条目】——
+     因为"+ 加一条"刚加出来的就是一个空输入框，过滤掉它等于按钮没反应。 */
+  if (editingRowKey === rowKeyOf(row) && editDraft) {
+    return editDraft.slice();
+  }
+  var k = rowKeyOf(row);
+  var edit = itineraryEdits[k];
+  if (edit && edit.items && edit.dirty) {
+    return edit.items.slice();
+  }
+  return row.items.slice();
+}
+
+/* 判断这一行是不是用户改过的（用来挂"已改"标记） */
+function isRowEdited(row) {
+  var e = itineraryEdits[rowKeyOf(row)];
+  return !!(e && e.dirty);
+}
+
+/* ============================================================
+   主题切换（Day 8）
+   ============================================================
 
    两套主题：明亮（默认）/ 赛博（深色霓虹）。
    实现方式：给 <html> 打一个 data-theme="cyber" 属性，
@@ -1924,6 +2499,11 @@ function addCity() {
 
 function generate() {
   clearErrors();
+
+  /* 要重新算一趟了 → 先退出"正在编辑某一行"的状态（Day 15）。
+     为什么放在最前面：这一趟算出来的是一整批新行，跟用户刚才在编辑的
+     那一行没有关系。留着编辑态会让用户看到一列输入框、却不知道自己在改哪。 */
+  exitRowEditing();
 
   /* 注意力已经转到"生成"上了 —— 清空的确认条先收起来。
      否则上面挂着"确定清空吗"、下面开始算行程，看着很怪。
@@ -2264,6 +2844,16 @@ function showEmpty() {
   hideAllBlocks();
   document.getElementById('result-area').hidden = false;
   document.getElementById('block-empty').hidden = false;
+
+  /* Day 15：把三张表的旧内容也倒掉。
+     为什么要多这一步：上面只是把块 hidden 起来，DOM 里还留着上一次的行。
+     正常情况下用户看不见，但只要以后有哪个地方"显示块"时忘了重画，
+     露出来的就是上一次的旧行程 —— 这种"看着像新结果、其实是旧的"最难查。
+     顺手倒掉成本几乎为零，还省内存。 */
+  ['table-itinerary', 'table-transport', 'table-cost'].forEach(function (id) {
+    var t = document.getElementById(id);
+    if (t) { t.querySelector('tbody').innerHTML = ''; }
+  });
 }
 
 /* 切到「错误」状态（Day 13 新增）。
@@ -2509,6 +3099,7 @@ function initApp() {
     selectedCities = [];
     selfAdded = {};
     clearSelfAddedStorage();     // 本地存储也一起清掉
+    clearItineraryEdits();       // 行程里改过的"大致安排"也一起清掉
     lastPlans = null;
     lastInput = null;
     activePlanId = null;
@@ -2543,6 +3134,9 @@ function initApp() {
 
   // 读回上次存的自填地点（localStorage），这样刷新页面后自己加的地点还在
   loadSelfAdded();
+
+  // 读回上次改过的"大致安排"（localStorage），刷新页面后修改还在
+  loadItineraryEdits();
 
   /* 一开始就显示"空状态"—— 打开页面就能看到"该怎么用"的引导，
      而不是往下翻一片空白。这也是"四种页面状态"里最容易漏掉的那个：

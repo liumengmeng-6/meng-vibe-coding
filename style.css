@@ -718,6 +718,25 @@ main, .page-main { flex: 1 0 auto; }
   color: var(--ink-3);
 }
 
+/* 城市顺序说明（Day 14）
+   为什么做得比普通注释醒目：顺序填错会直接算错行程和费用（返程是从最后一个城市
+   回到出发地），这句话用户不看就会踩坑 —— 所以给它底色和左侧竖线，别混在灰字里。 */
+.order-note {
+  margin: 8px 0 0;
+  padding: 9px 12px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-2);
+  background: var(--brand-soft);
+  border-left: 3px solid var(--brand);
+  border-radius: 0 8px 8px 0;
+}
+
+.order-note b {
+  color: var(--brand);
+  font-weight: 700;
+}
+
 .error {
   margin: 7px 0 0;
   font-size: 13px;
@@ -1832,6 +1851,267 @@ html { overflow-x: hidden; }
 @media (max-width: 560px) {
   .more-btn { font-size: 12px; }
   .more-list { padding: 7px 10px 7px 19px; font-size: 12.5px; }
+}
+
+/* ============================================================
+   「当天大致安排」可编辑（Day 15）
+
+   来历：这一格原来是纯文字（AI 算出来就没法动）。用户的实际需求是
+   "照着这个去玩，但我想自己微调" —— 比如把"人民公园"换成"锦里"。
+   所以给它加一个「编辑」入口，点开变成一组可增删改的输入框。
+
+   ⚠️ 三条设计约束（都不是随便定的）：
+   1. 改安排【不改花费】。当天的钱是按时天固定标准估的（市内交通+吃+门票），
+      跟写了几条安排无关。这件事必须在编辑态里写出来，否则用户改完
+      看到钱没变，会以为功能坏了。 → .edit-tip
+   2. 只在【编辑态】才出现输入框。"直接点文字就能改"看着更省事，
+      但在手机上手指一划就误触进编辑、还弹键盘 —— 宁可多一个按钮。
+   3. 改过的行要有【看得见的痕迹】（.edited-badge + .row-edited），
+      否则用户下次打开会分不清"这是我改的、还是 AI 给的"。
+   颜色一律走语义变量，双主题自动跟着变。
+   ============================================================ */
+
+/* 「编辑」按钮：跟同格子里的「展开看这 N 条」是一家人（虚线胶囊），
+   但更轻 —— 它是次要动作，不该跟展开按钮抢注意力。 */
+.edit-btn {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 8px;
+  margin-left: 6px;              /* 和展开按钮并排时不贴在一起 */
+  padding: 3px 10px;
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-2);
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.7;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease),
+              border-color var(--dur-fast) var(--ease),
+              background var(--dur-fast) var(--ease);
+}
+
+.edit-btn:hover {
+  color: var(--brand);
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+
+.edit-btn:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* 改过的标记。做成实心小胶囊而不是纯文字 ——
+   纯文字（灰提示色）在浅底上太弱，用户扫一眼看不见。 */
+.edited-badge {
+  display: inline-block;
+  margin-top: 8px;
+  margin-left: 6px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--brand);
+  color: var(--on-brand);
+  font-size: 11.5px;
+  line-height: 1.7;
+  vertical-align: middle;
+}
+
+/* 整行"我改过"的底色：只在左侧留一条主色竖线。
+   为什么不整行填色 —— 这一列本来就有斑马纹和悬停底色，
+   再叠一层会打架，"哪一层是什么"就说不清了。 */
+.data-table tr.row-edited td:first-child {
+  box-shadow: inset 3px 0 0 0 var(--brand);
+}
+
+/* ---------- 编辑态 ---------- */
+
+/* 正在编辑的整行：底色跟别的行拉开，一眼看出"改的是这一行"。
+   为什么还要给 tr 上色、而不是只靠那圈框：编辑块在表格第三列里，
+   用户视线容易只盯着输入框，忘了自己在改哪一天的行程。 */
+.data-table tr.is-editing td {
+  background: var(--brand-soft);
+}
+
+.edit-list {
+  margin-top: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--brand);
+  border-radius: 12px;
+  background: var(--surface-3);
+  /* ⚠️ 这里【故意不写 animation-fill-mode: both】。
+     写了 both 的话，动画一旦没播（浏览器省电模式、被降级、或者
+     截图/导出这类"静态渲染"场景），元素会永远停在第一帧 opacity: 0 ——
+     用户点开「编辑」看到一片空白，还查不出原因。
+     不写 both 就没这个问题：动画没播时元素直接就是它本来的样子（可见）。 */
+  animation: fade-up var(--dur) var(--ease);
+}
+
+/* "改这里不改花费"的说明。做成提示条而不是小灰字：
+   它承担的是"消除误会"的职责，用户看不见就等于没写。 */
+.edit-tip {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--brand-soft);
+  box-shadow: inset 3px 0 0 0 var(--brand);
+  color: var(--ink-2);
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
+/* 一条安排：输入框占满剩下的宽度，右边三个小按钮 */
+.edit-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.edit-input {
+  flex: 1;
+  /* ⚠️ min-width: 0 必须写：flex 子项的默认最小宽度是 auto（内容宽度），
+     输入框里文字一长就会把整行撑出横向滚动条。这个坑在 #input-card 踩过。 */
+  min-width: 0;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+  padding: 7px 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  /* 配色跟顶部那几个输入框保持一致（用户填字的地方都长一个样）。
+     ⚠️ 正文色必须是 --ink，不能用 --field-text —— 那个变量的用途是
+        "占位文字"，赛博主题下它是 #6d7c99（深蓝灰），压在深底上根本看不清。 */
+  background: var(--surface-3);
+  color: var(--ink);
+}
+
+.edit-input:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+
+.edit-tools {
+  flex: none;
+  display: flex;
+  gap: 4px;
+}
+
+/* 上移 / 下移 / 删除。做成小方块而不是圆点：
+   圆点在 12px 这个尺寸下几乎分不出边界，方块更像"能按的东西"。 */
+.edit-mini {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease),
+              border-color var(--dur-fast) var(--ease),
+              background var(--dur-fast) var(--ease);
+}
+
+.edit-mini:hover:not(:disabled) {
+  color: var(--brand);
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+
+/* 到头了就禁用（第一条的上移、最后一条的下移）。
+   为什么不禁用而是"点一下没反应"：禁用是【看得见】的，
+   用户一眼就知道"已经是最上面了"，不用去猜为什么点了不动。 */
+.edit-mini:disabled {
+  opacity: .38;
+  cursor: not-allowed;
+}
+
+.edit-mini:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+
+/* 删除用警示色，跟"上移下移"区分开 —— 它是个会造成损失的动作 */
+.edit-del:hover:not(:disabled) {
+  color: var(--bad);
+  border-color: var(--bad);
+  background: var(--bad-soft);
+}
+
+.edit-empty {
+  margin: 0 0 10px;
+  color: var(--ink-3);
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
+.edit-add {
+  margin-top: 2px;
+  padding: 6px 14px;
+  font-size: 13.5px;
+  white-space: nowrap;
+}
+
+.edit-actions {
+  display: flex;
+  flex-wrap: wrap;   /* 列宽不够时让按钮换行，而不是把它们压扁到"完/成"竖排 */
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+/* 编辑块里的按钮要"缩得住"：
+   · flex: none —— 不许被压缩（压了就会变成「完\n成」这种竖排字，很丑）
+   · 内边距比主按钮小一号 —— 这里只是单元格里的小操作，
+     用页面顶部那种大按钮的尺寸会把这一格占满 */
+.edit-actions .btn {
+  flex: none;
+  padding: 8px 20px;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+/* 窄屏（Day 15）：编辑块塞不进"当天大致安排"这一列。
+   这一列在 420px 宽的屏幕上只剩一百多像素，输入框 + 三个小按钮
+   再怎么挤也放不下 —— 实测会被顶出屏幕右侧，用户看不见按钮。
+
+   处理办法：让一条安排【竖着排】——
+     · 输入框独占一行（宽度就跟列宽走，不再硬撑）
+     · ↑↓× 三个按钮挪到下一行、靠右对齐（还是"属于这一条"，不会和上一条混）
+   为什么不让编辑块整体横向溢出、靠表格滚动条看：
+     横向滚动的表格里再套一个要滚的东西，手机上就是"两指怎么划都不对"，
+     宁可竖着排、牺牲一点紧凑。 */
+@media (max-width: 560px) {
+  .edit-line {
+    display: block;          /* 从 flex 换成块：两行自然堆叠 */
+  }
+  .edit-input {
+    width: 100%;
+    box-sizing: border-box;  /* 不加这条，100% 宽 + 左右内边距会溢出 */
+    font-size: 13.5px;
+    padding: 6px 9px;
+  }
+  .edit-tools {
+    display: flex;
+    justify-content: flex-end;   /* 按钮靠右，视觉上仍贴着上面那个输入框 */
+    margin-top: 5px;
+  }
+  .edit-list { padding: 10px 11px; }
+  .edit-mini { width: 26px; height: 26px; }
+  .edit-tip { font-size: 12px; padding: 7px 10px; }
+}
+
+/* 编辑态那一块是"点一下就冒出来"的，对动效敏感的用户会觉得突兀，
+   这里跟着全局规矩一起关掉（无障碍要求，不是可选项）。 */
+@media (prefers-reduced-motion: reduce) {
+  .edit-list { animation: none; }
 }
 
 /* ============================================================

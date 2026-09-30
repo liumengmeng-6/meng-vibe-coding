@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>出行规划小助手｜预算内最合适的行程</title>
 
-  <!-- 后面的 ?v=20260925e 是"版本号"，不是路径。
+  <!-- 后面的 ?v=20260925g 是"版本号"，不是路径。
        作用：强迫浏览器在样式更新后重新下载 style.css。
        不加的话，浏览器会把旧的 CSS 存在本地反复用，
        结果就是"我明明改了样式，你打开却没变化"。
        注意：这仍然只是本地文件，不联网，离线照常可用。 -->
-  <link rel="stylesheet" href="style.css?v=20260925e">
+  <link rel="stylesheet" href="style.css?v=20260925g">
 
   <!-- 主题抢先应用：必须在 <body> 画出来之前执行，
        否则选了赛博主题的人刷新时会先闪一下白屏再变黑（很难受）。
@@ -72,6 +72,10 @@
         </div>
         <div class="chips" id="city-chips" aria-live="polite"></div>
         <p class="field-note">内置了成都、重庆的推荐清单；其他城市也能去，清单自己添加。</p>
+        <p class="order-note">
+          <b>请按游玩顺序填写</b>（先去的写前面）。例：武汉 → 成都 → 重庆，就先加成都、再加重庆。
+          系统会算「武汉→成都→重庆→武汉」的完整往返。
+        </p>
         <p class="error" id="error-to-city" hidden></p>
       </div>
 
@@ -298,10 +302,17 @@
       </div>
       </div><!-- /视图一 整体方案 -->
 
-      <!-- ---------- 视图二：每日行程（Day 13） ---------- -->
+      <!-- ---------- 视图二：每日行程（Day 13；Day 15 加"大致安排"可编辑） ---------- -->
       <div class="view" id="view-trip">
       <div class="card" id="block-itinerary" hidden>
         <h2 class="card-title">④ 每日行程</h2>
+        <!-- 这张表有两件事跟别处不一样，得先说在前面：
+             ① 安排是可以自己改的（点那一格的「编辑」）；
+             ② 改了安排【不会】改花费 —— 钱是按"人天标准"估的，跟写了几个景点无关。
+                这句写在卡片上而不是只写在编辑框里：用户可能改完才发现钱没动，
+                那时候他已经在心里认定"这功能坏了"。 -->
+        <p class="card-note">「当天大致安排」是给照着走用的，可以直接改 —— 点那一格的<b>「编辑」</b>就行。
+          改的是安排内容，<b>当天的花费不会跟着变</b>：那笔钱是按每天固定标准估的（市内交通 + 吃 + 门票），跟写了几条安排无关。</p>
         <div class="table-scroll">
           <table class="data-table" id="table-itinerary">
             <thead>
@@ -368,7 +379,7 @@
 
   <!-- 逻辑脚本：必须是普通 script（不能用 type="module"），否则双击打开时不会执行。
        末尾的 ?v= 是版本号，作用同上面的 style.css：改了脚本你才看得到变化。 -->
-  <script src="app.js?v=20260925e" defer></script>
+  <script src="app.js?v=20260925g" defer></script>
 
 </body>
 </html>

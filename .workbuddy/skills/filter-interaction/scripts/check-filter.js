@@ -80,6 +80,12 @@ function generate(w, from, cities, days, budget) {
   doc.getElementById('days').value = String(days);
   doc.getElementById('budget').value = String(budget);
   doc.getElementById('btn-generate').click();
+  /* Day 13 加了三个结果视图之后，美食清单被归到「账本」视图里（block-highlights），
+     而生成完默认停在「整体方案」—— 那时 block-highlights 是 hidden 的。
+     Day 12 写这段时还没有视图，所以这里必须补一句"切到账本"，
+     否则后面所有断言拿到的是一个隐藏的块（I5 就是这么挂的）。 */
+  const tab = doc.getElementById('tab-cost');
+  if (tab) { tab.click(); }
 }
 
 /* ---------- 读取页面状态的几个小函数 ---------- */
@@ -257,6 +263,9 @@ ok(rowsOf(doc).length > 0 && firstNum(countText(doc)) === rowsOf(doc).length,
    '实际 ' + rowsOf(doc).length + ' 条 / ' + countText(doc));
 ok(fbtn(doc, 'en').getAttribute('aria-pressed') === 'true',
    'G6 重新生成没把用户选的档位弄丢（还是"吃的"）');
+/* Day 13：重新生成会把视图重置回「整体方案」，美食清单又被藏起来了。
+   后面的 I5 要检查它可见，所以这里再切回「账本」一次。 */
+if (doc.getElementById('tab-cost')) { doc.getElementById('tab-cost').click(); }
 
 /* ---------- H. 可访问性（余力加练） ---------- */
 section('H. 可访问性（余力加练：键盘 + 读屏 + 对比度）');
