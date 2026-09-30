@@ -42,6 +42,13 @@
   --bad-line: #efd3cd;       /* 危险提示条的细边（比 --bad 淡，不抢眼） */
   --on-bad: #ffffff;         /* 压在 --bad 上的文字色 */
 
+  /* 警示色（Day 14 加）：用在"这个数字是估算的，别当真"这类提醒上。
+     跟 --bad（红色，代表出错）分开：估算不是错误，是"要知道它的局限"，
+     所以用琥珀色，语气是提醒而不是报警。
+     对比度：--warn 在 --warn-soft 底上 ≥ 4.5:1，符合 WCAG AA。 */
+  --warn: #9a5b00;
+  --warn-soft: #fdf3e3;
+
   /* 抽出这些"补丁色"，是为了让深色主题能整体换掉。
      原来它们散落在各处写死（#fff / #fafbfc / #fcfcfd），
      深色主题下会变成一块块白斑。 */
@@ -112,6 +119,11 @@
   --bad-soft: #2e0f16;
   --bad-line: #4a2029;
   --on-bad: #04121a;         /* 赛博的 --bad 是亮红，压深色字才够对比（白字只有 3.0，不达标） */
+
+  /* 警示色（Day 14 加）：深底上必须调亮，否则琥珀色糊成一片看不清。
+     这是"红绿功能色在深色主题必须调亮"的同一个道理。 */
+  --warn: #ffb454;
+  --warn-soft: #2a1d08;
 
   --surface: #0d1220;
   --surface-2: #121a2a;
@@ -1413,6 +1425,18 @@ main, .page-main { flex: 1 0 auto; }
   margin: 6px 0 0;
   font-size: 13px;
   color: var(--ink-2);
+}
+
+/* 估算声明（有城市不在数据表里时出现）
+   跟普通 .seg-note 区分开：用警示色 + 左侧竖线，
+   一眼能看出"这句是在提醒你这个数字不可靠"，而不是又一句行程说明。 */
+.seg-note-estimate {
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-left: 3px solid var(--warn);
+  background: var(--warn-soft);
+  border-radius: 0 8px 8px 0;
+  color: var(--ink);
 }
 
 /* ---------- 预算结论 ---------- */

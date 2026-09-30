@@ -142,6 +142,104 @@ function bothHaveAirport(fromCity, toCity) {
 }
 
 
+/* ---------- 国内城市名单（用来判断"用户填的是不是国内城市"） ----------
+
+   为什么需要这份名单：
+     程序靠【经纬度】算两地距离，再拿距离推票价。而坐标表（CITY_COORDS）
+     只覆盖 24 个城市 —— 用户填了表外的城市，程序算不出距离。
+     以前的做法是"兜底给一个 5 小时 400 元"，也就是【凭空编一个数字】。
+     碧儿测出来的问题就是这个：填「东京」照样出一份方案、报 800 块，
+     页面上一句提示都没有 —— 用户会拿着这个数字去做决定。
+
+   所以现在改成：填的城市不在【国内】就明确拦住，不再编数字。
+
+   数据依据：公开的行政区划（34 个省级行政区 + 主要地级市 / 自治州 / 地区），
+             属公开常识，不联网核实。
+   口径：收地级市及以上（含自治州、盟、地区），不收县级市 —— 太多了，
+         而且用户一般报的是地级市名。
+   已知局限（待核实）：民政部会新设 / 撤并地级市，这份名单是按 2023 年口径整理的，
+             将来可能有个别出入。漏掉时用户可以换个相近的大城市。 */
+var CN_CITIES = {
+  '北京': true, '天津': true, '上海': true, '重庆': true, '香港': true, '澳门': true, '石家庄': true, '唐山': true,
+  '秦皇岛': true, '邯郸': true, '邢台': true, '保定': true, '张家口': true, '承德': true, '沧州': true, '廊坊': true,
+  '衡水': true, '太原': true, '大同': true, '阳泉': true, '长治': true, '晋城': true, '朔州': true, '晋中': true,
+  '运城': true, '忻州': true, '临汾': true, '吕梁': true, '呼和浩特': true, '包头': true, '乌海': true, '赤峰': true,
+  '通辽': true, '鄂尔多斯': true, '呼伦贝尔': true, '巴彦淖尔': true, '乌兰察布': true, '兴安盟': true, '锡林郭勒盟': true, '阿拉善盟': true,
+  '沈阳': true, '大连': true, '鞍山': true, '抚顺': true, '本溪': true, '丹东': true, '锦州': true, '营口': true,
+  '阜新': true, '辽阳': true, '盘锦': true, '铁岭': true, '朝阳': true, '葫芦岛': true, '长春': true, '吉林': true,
+  '四平': true, '辽源': true, '通化': true, '白山': true, '松原': true, '白城': true, '延边': true, '哈尔滨': true,
+  '齐齐哈尔': true, '鸡西': true, '鹤岗': true, '双鸭山': true, '大庆': true, '伊春': true, '佳木斯': true, '七台河': true,
+  '牡丹江': true, '黑河': true, '绥化': true, '大兴安岭': true, '南京': true, '无锡': true, '徐州': true, '常州': true,
+  '苏州': true, '南通': true, '连云港': true, '淮安': true, '盐城': true, '扬州': true, '镇江': true, '泰州': true,
+  '宿迁': true, '杭州': true, '宁波': true, '温州': true, '嘉兴': true, '湖州': true, '绍兴': true, '金华': true,
+  '衢州': true, '舟山': true, '台州': true, '丽水': true, '合肥': true, '芜湖': true, '蚌埠': true, '淮南': true,
+  '马鞍山': true, '淮北': true, '铜陵': true, '安庆': true, '黄山': true, '滁州': true, '阜阳': true, '宿州': true,
+  '六安': true, '亳州': true, '池州': true, '宣城': true, '福州': true, '厦门': true, '莆田': true, '三明': true,
+  '泉州': true, '漳州': true, '南平': true, '龙岩': true, '宁德': true, '南昌': true, '景德镇': true, '萍乡': true,
+  '九江': true, '新余': true, '鹰潭': true, '赣州': true, '吉安': true, '宜春': true, '抚州': true, '上饶': true,
+  '济南': true, '青岛': true, '淄博': true, '枣庄': true, '东营': true, '烟台': true, '潍坊': true, '济宁': true,
+  '泰安': true, '威海': true, '日照': true, '临沂': true, '德州': true, '聊城': true, '滨州': true, '菏泽': true,
+  '郑州': true, '开封': true, '洛阳': true, '平顶山': true, '安阳': true, '鹤壁': true, '新乡': true, '焦作': true,
+  '濮阳': true, '许昌': true, '漯河': true, '三门峡': true, '南阳': true, '商丘': true, '信阳': true, '周口': true,
+  '驻马店': true, '济源': true, '武汉': true, '黄石': true, '十堰': true, '宜昌': true, '襄阳': true, '鄂州': true,
+  '荆门': true, '孝感': true, '荆州': true, '黄冈': true, '咸宁': true, '随州': true, '恩施': true, '仙桃': true,
+  '潜江': true, '天门': true, '神农架': true, '长沙': true, '株洲': true, '湘潭': true, '衡阳': true, '邵阳': true,
+  '岳阳': true, '常德': true, '张家界': true, '益阳': true, '郴州': true, '永州': true, '怀化': true, '娄底': true,
+  '湘西': true, '广州': true, '韶关': true, '深圳': true, '珠海': true, '汕头': true, '佛山': true, '江门': true,
+  '湛江': true, '茂名': true, '肇庆': true, '惠州': true, '梅州': true, '汕尾': true, '河源': true, '阳江': true,
+  '清远': true, '东莞': true, '中山': true, '潮州': true, '揭阳': true, '云浮': true, '南宁': true, '柳州': true,
+  '桂林': true, '梧州': true, '北海': true, '防城港': true, '钦州': true, '贵港': true, '玉林': true, '百色': true,
+  '贺州': true, '河池': true, '来宾': true, '崇左': true, '海口': true, '三亚': true, '三沙': true, '儋州': true,
+  '五指山': true, '琼海': true, '文昌': true, '万宁': true, '东方': true, '定安': true, '屯昌': true, '澄迈': true,
+  '临高': true, '白沙': true, '昌江': true, '乐东': true, '陵水': true, '保亭': true, '琼中': true, '成都': true,
+  '自贡': true, '攀枝花': true, '泸州': true, '德阳': true, '绵阳': true, '广元': true, '遂宁': true, '内江': true,
+  '乐山': true, '南充': true, '眉山': true, '宜宾': true, '广安': true, '达州': true, '雅安': true, '巴中': true,
+  '资阳': true, '阿坝': true, '甘孜': true, '凉山': true, '贵阳': true, '六盘水': true, '遵义': true, '安顺': true,
+  '毕节': true, '铜仁': true, '黔西南': true, '黔东南': true, '黔南': true, '昆明': true, '曲靖': true, '玉溪': true,
+  '保山': true, '昭通': true, '丽江': true, '普洱': true, '临沧': true, '楚雄': true, '红河': true, '文山': true,
+  '西双版纳': true, '大理': true, '德宏': true, '怒江': true, '迪庆': true, '拉萨': true, '日喀则': true, '昌都': true,
+  '林芝': true, '山南': true, '那曲': true, '阿里': true, '西安': true, '铜川': true, '宝鸡': true, '咸阳': true,
+  '渭南': true, '延安': true, '汉中': true, '榆林': true, '安康': true, '商洛': true, '兰州': true, '嘉峪关': true,
+  '金昌': true, '白银': true, '天水': true, '武威': true, '张掖': true, '平凉': true, '酒泉': true, '庆阳': true,
+  '定西': true, '陇南': true, '临夏': true, '甘南': true, '西宁': true, '海东': true, '海北': true, '黄南': true,
+  '海南州': true, '果洛': true, '玉树': true, '海西': true, '银川': true, '石嘴山': true, '吴忠': true, '固原': true,
+  '中卫': true, '乌鲁木齐': true, '克拉玛依': true, '吐鲁番': true, '哈密': true, '昌吉': true, '博尔塔拉': true, '巴音郭楞': true,
+  '阿克苏': true, '克孜勒苏': true, '喀什': true, '和田': true, '伊犁': true, '塔城': true, '阿勒泰': true, '石河子': true,
+  '阿拉尔': true, '图木舒克': true, '五家渠': true, '北屯': true, '铁门关': true, '双河': true, '可克达拉': true, '昆玉': true,
+  '胡杨河': true, '新星': true
+};
+
+/* 常见别名 / 俗称 → 正式城市名
+   为什么要这个：用户可能打"魔都""蓉城"，这些不是正式名但意思很明确。
+   只收流传最广的几个，不追求把俗称收全。 */
+var CN_CITY_ALIAS = {
+  '帝都': '北京', '魔都': '上海', '鹏城': '深圳', '羊城': '广州',
+  '蓉城': '成都', '山城': '重庆', '春城': '昆明', '冰城': '哈尔滨',
+  '姑苏': '苏州', '金陵': '南京', '维多利亚港': '香港'
+};
+
+/* 用户填的这串字是不是一个国内城市？
+   判断顺序：① 空 → 交给 E1 那条规则去管，这里不管
+             ② 别名 → 换成正式名再看
+             ③ 在 CN_CITIES 里 → 是
+   ⚠️ 这个函数只回答"是不是"，不管"有没有坐标"。国内小城可能没坐标
+      （坐标表只有 24 城），那种情况由 estimateTransport 去标注"估算"。 */
+function isKnownChineseCity(name) {
+  if (!name) return false;
+  var n = String(name).trim();
+  if (n === '') return false;
+  if (CN_CITY_ALIAS[n]) n = CN_CITY_ALIAS[n];
+  return !!CN_CITIES[n];
+}
+
+/* 别名/城市名 → 正式城市名（查坐标、查清单都要用正式名） */
+function normalizeCityName(name) {
+  if (!name) return '';
+  var n = String(name).trim();
+  if (n === '') return '';
+  return CN_CITY_ALIAS[n] || n;
+}
+
 /* 常见城市的大致坐标（只用于估算距离，不画地图、不联网） */
 var CITY_COORDS = {
   '北京': { lat: 39.90, lng: 116.41 },
@@ -190,13 +288,25 @@ function estimateTransport(fromCity, toCity) {
   var a = CITY_COORDS[fromCity];
   var b = CITY_COORDS[toCity];
 
-  // 坐标表里没有的城市：给一个"保守估计"，并明确标注需要用户自己核实
+  /* 坐标表里没有的城市（Day 14 用户反馈后改动）
+     ——以前这里直接返回"高铁 5 小时 400 元"，也就是【凭空编一个数字】。
+     碧儿测出来的问题正是这个：填「东京」报 800 块，一句提示都没有，
+     用户会当真。现在改了：
+       · 境外城市已经被 E6 在校验阶段拦住，走不到这里；
+       · 能走到这里的只有【国内但没坐标】的城市（乌鲁木齐、三亚、桂林…）；
+       · 不再假装"算出来了"，而是给一个明确标注的估算基准价，
+         并且沿途一路带着 estimated 标记，最后显示在页面上和账本里。
+     为什么还留一个选项（而不是返回空数组）：下游有十几处用 options[0]
+     取"最快的那段"来算是否占用整天（≥6 小时）。返回空数组会让那些地方
+     全部读到 undefined 然后崩掉。所以保留一项，但如实标成估算。 */
   if (!a || !b) {
     return {
       known: false,
+      estimateNote: '该城市暂无距离数据，以下按「同省或邻省中长途」估算',
       options: [
         { key: 'highspeed', mode: '高铁', hours: 5, price: 400,
-          label: '暂无该城市的坐标数据，此处为保守估算' }
+          estimated: true,
+          label: '估算值，仅供参考（暂无该城市数据）' }
       ]
     };
   }
@@ -434,11 +544,14 @@ function splitDaysWithModes(fromCity, cities, totalDays, pickKeys) {
 
 function calcCost(legs, totalDays) {
   var intercity = 0;
+  var estimatedLegs = 0;   // 有几段用的是"没有数据、只能估"的票价（Day 14 加）
+
   for (var i = 0; i < legs.length; i++) {
     // 这套方案在这一段选了哪种方式，就用它的票价
     var leg = legs[i];
     var chosen = leg.chosen || leg.estimate.options[0];
     intercity += chosen.price;
+    if (chosen.estimated) estimatedLegs++;
   }
 
   var cityTransfer = PRICES.cityTransferPerDay * totalDays;
@@ -448,15 +561,25 @@ function calcCost(legs, totalDays) {
 
   var total = intercity + cityTransfer + hotel + food + ticket;
 
+  /* 城际交通这一行的口径说明。
+     为什么要在个别城市没数据时特别写出来：合计里混着估算的钱，
+     不说清的话用户会以为整笔都是算准的（AGENTS.md 8.7 第 4 条：
+     页面上凡是估算的数字，必须显示"估算值，仅供参考"）。 */
+  var intercityDetail = '本方案各段所选交通方式的票价合计';
+  if (estimatedLegs > 0) {
+    intercityDetail += '（含 ' + estimatedLegs + ' 段估算值，仅供参考）';
+  }
+
   return {
     items: [
-      { key: 'intercity',    label: '城际交通', detail: '本方案各段所选交通方式的票价合计', amount: intercity },
+      { key: 'intercity',    label: '城际交通', detail: intercityDetail, amount: intercity },
       { key: 'cityTransfer', label: '市内交通', detail: PRICES.cityTransferPerDay + ' 元/天 × ' + totalDays + ' 天', amount: cityTransfer },
       { key: 'hotel',        label: '住宿',     detail: PRICES.hotelPerNight + ' 元/晚 × ' + Math.max(0, totalDays - 1) + ' 晚', amount: hotel },
       { key: 'food',         label: '吃',       detail: PRICES.foodPerDay + ' 元/天 × ' + totalDays + ' 天', amount: food },
       { key: 'ticket',       label: '门票',     detail: PRICES.ticketPerDay + ' 元/天 × ' + totalDays + ' 天', amount: ticket }
     ],
-    total: total
+    total: total,
+    hasEstimate: estimatedLegs > 0
   };
 }
 
@@ -809,6 +932,29 @@ function validateInput(input) {
     errors.cities = '最多选择 4 个城市，当前有 ' + input.cities.length + ' 个';
   }
 
+  /* E6 填的不是国内城市（Day 14 用户反馈后新加）
+     为什么加这条：以前填「东京」也照样出一份方案、报 800 块交通费 ——
+     因为程序算不出距离时会给一个兜底的"5 小时 400 元"。
+     那个数字是编的，用户却看不出，会当真。现在改成直接拦住、说清楚。
+     放在 E2 之后：得先有城市，才谈得上"这个城市认不认识"。
+     出发地和目的地都要查 —— 出发地填「东京」同样算不出距离。 */
+  if (!errors.fromCity && input.fromCity && !isKnownChineseCity(input.fromCity)) {
+    errors.fromCity = '「' + String(input.fromCity).trim() + '」暂时不支持。' +
+      '目前只能规划国内城市，比如：北京、上海、广州、成都、重庆、西安。';
+  }
+  if (!errors.cities && input.cities && input.cities.length > 0) {
+    var unknown = [];
+    for (var ci = 0; ci < input.cities.length; ci++) {
+      if (!isKnownChineseCity(input.cities[ci])) {
+        unknown.push(String(input.cities[ci]).trim());
+      }
+    }
+    if (unknown.length > 0) {
+      errors.cities = '「' + unknown.join('」「') + '」暂时不支持。' +
+        '目前只能规划国内城市，比如：北京、上海、广州、成都、重庆、西安。';
+    }
+  }
+
   // E3 天数不是 2–20 的整数
   var d = input.days;
   if (d === null || d === undefined || d === '' || !isFinite(d) ||
@@ -906,9 +1052,19 @@ function readInput() {
   var daysRaw = document.getElementById('days').value;
   var budgetRaw = document.getElementById('budget').value;
 
+  /* 城市名在这里就【统一成正式名】（Day 14 加）。
+     为什么放在这一个地方：用户可能打俗称（"魔都"），而后面算距离、
+     查内置清单用的都是正式名（"上海"）。要是在每个用到的地方各自转换，
+     迟早漏一处。读输入时转一次，后面全拿到正式名。
+     normalizeCityName 只做"别名 → 正式名"，不做别的判断。 */
+  var cities = [];
+  for (var i = 0; i < selectedCities.length; i++) {
+    cities.push(normalizeCityName(selectedCities[i]));
+  }
+
   return {
-    fromCity: document.getElementById('from-city').value,
-    cities: selectedCities.slice(),
+    fromCity: normalizeCityName(document.getElementById('from-city').value),
+    cities: cities,
     days: daysRaw === '' ? null : Number(daysRaw),
     budget: budgetRaw === '' ? null : Number(budgetRaw)
   };
@@ -1536,8 +1692,14 @@ function renderTransport(split, chosenKeys) {
     var headTd = document.createElement('td');
     headTd.colSpan = 5;
     // 返程段单独称呼，别叫「第 N 段」—— 它是"回家"，性质不一样
+    /* 括号里的距离：只有算得出距离时才写。
+       没有坐标数据的城市，estimate.km 是 undefined ——
+       以前这里会直接拼出「约 undefined 公里」漏到页面上（Day 14 修）。 */
+    var kmTxt = (typeof leg.estimate.km === 'number')
+      ? '（约 ' + leg.estimate.km + ' 公里）'
+      : '（距离未知，按估算值）';
     headTd.textContent = (leg.isReturn ? '返程：' : '第 ' + (i + 1) + ' 段：') +
-      leg.from + ' → ' + leg.to + '（约 ' + leg.estimate.km + ' 公里）';
+      leg.from + ' → ' + leg.to + kmTxt;
     headTr.appendChild(headTd);
     tbody.appendChild(headTr);
 
@@ -1567,7 +1729,12 @@ function renderTransport(split, chosenKeys) {
 
       var td4 = document.createElement('td');
       td4.className = 'num';
-      td4.textContent = '约 ' + o.price + ' 元';
+      /* 有坐标数据 → 直接给数字；没有 → 数字后面加个标记。
+         为什么加了标记还要给数字：完全不给数字，下面的账本和"是否占整天"
+         就没法算了。给数字但说清它是估的，比假装算准了诚实。 */
+      td4.textContent = o.estimated
+        ? ('约 ' + o.price + ' 元 *')
+        : ('约 ' + o.price + ' 元');
 
       var td5 = document.createElement('td');
       td5.textContent = o.label;
@@ -1580,6 +1747,13 @@ function renderTransport(split, chosenKeys) {
     // 每段下面必须有一句"时间 vs 花费"的结论（AC7）
     var note = document.createElement('p');
     note.className = 'seg-note';
+
+    /* 这一段有没有"没数据、只能估"的情况（Day 14 加）。
+       有的话，结论句后面再补一句，说明这个数字是怎么来的。 */
+    var hasEstimate = false;
+    for (var q = 0; q < opts.length; q++) {
+      if (opts[q].estimated) { hasEstimate = true; break; }
+    }
 
     if (fastest !== cheapest) {
       var saveMoney = fastest.price - cheapest.price;
@@ -1596,6 +1770,18 @@ function renderTransport(split, chosenKeys) {
         (leg.occupiesWholeDay ? '耗时较长，整天在路上，行程里已单独占一天。' : '');
     }
     if (notesBox) notesBox.appendChild(note);
+
+    /* 估算声明（AC 口径：页面上凡是估算的数字必须标"估算值，仅供参考"）
+       为什么单独起一段、而不是并进上面那句：
+       上面那句是"这段路怎么选"的结论，这句是"这个数字可不可信"的说明，
+       两件事。混在一起用户会以为整段都是估的（其实只有这一种方式没数据）。 */
+    if (hasEstimate && notesBox) {
+      var est = document.createElement('p');
+      est.className = 'seg-note seg-note-estimate';
+      est.textContent = '⚠️ 这一段有城市不在数据表里，票价和耗时是估算值，仅供参考。' +
+        '实际请以铁路 12306 / 航司官网为准。';
+      notesBox.appendChild(est);
+    }
   }
 }
 
@@ -1660,6 +1846,21 @@ function renderCost(cost) {
   trTotal.className = 'row-total';
   trTotal.innerHTML = '<td>合计</td><td>以上五项相加</td><td class="num" id="cost-total">¥0</td>';
   tbody.appendChild(trTotal);
+
+  /* 合计里混了估算值时，在账本底部补一句总声明。
+     为什么放在"合计"下面而不是表格上面：用户是看完数字才需要这句话，
+     先声明会被当成"又一段说明文字"跳过去。 */
+  var oldNote = document.getElementById('cost-estimate-note');
+  if (oldNote) oldNote.parentNode.removeChild(oldNote);
+
+  if (cost.hasEstimate) {
+    var note = document.createElement('p');
+    note.id = 'cost-estimate-note';
+    note.className = 'field-note';
+    note.textContent = '⚠️ 上面的城际交通含估算值 —— 有城市不在数据表里（目前覆盖 24 个主要城市），' +
+      '票价和耗时按同类路线估算，仅供参考。实际请以铁路 12306 / 航司官网为准。';
+    if (tbody.parentNode) tbody.parentNode.appendChild(note);
+  }
 
   // 合计金额滚上去
   var totalEl = document.getElementById('cost-total');
