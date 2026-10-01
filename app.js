@@ -382,6 +382,104 @@ function cheapestOption(leg) {
 function round1(n) { return Math.round(n * 10) / 10; }
 
 
+/* ---------- 外部核对链接（Day 16 追加） ----------
+
+   为什么要做这个：用户想要"价格和路线有据可依"。
+   但 12306 从未开放第三方 API、携程/飞猪只给企业签约（详见 PRD
+   「为什么不做实时数据对接」）。所以【拿不到真实票价】。
+   拿不到就不假装拿得到（AGENTS.md 8.7），改成：
+   【把"去哪儿核对"这件事做成一次点击】，让用户自己拿到真实数据。
+
+   三个链接的用途分得很清楚，别混：
+
+     · 火车（高铁/普速） → 12306 官网。全国铁路唯一官方售票站，
+                          票价和余票只有它最准。
+     · 长途汽车 / 拼车   → 高德。公路客运没有统一的官方查询站，
+                          给高德看"这条路线实际有多远"够用了。
+     · 飞机             → 高德（只看距离）+ 文字提示去航司官网。
+                          ⚠️ 刻意【不给】携程/去哪儿这类商业代销平台的链接：
+                          它们不是官方，价格随时变，链过去也未必对得上，
+                          而且等于我们替商业平台导流。给个"去航司官网"的
+                          提示，比给一个不权威的链接诚实。
+
+   实现上的两个注意点：
+     ① 用【城市名】而不是经纬度拼链接。我们有坐标的只有 24 个城，
+        用坐标拼的话另外 346 个城市就没有链接了。高德自己的地名库
+        比我们全得多，交给它去解析。
+     ② 一律走 https。断网时链接照常显示，点了浏览器会提示打不开 ——
+        这符合 AC15 的口径：主体功能离线可用，这些跳转只是"增强"。 */
+
+/* 高德的"路线规划"链接。
+   callnative=1 是关键参数：手机上装了高德就直接唤起 App 并规划好路线，
+   没装 / 在电脑上就打开网页版。一个链接同时覆盖两种设备，不用自己判断。
+   （这是高德官方 URI 协议，参数名固定，不要改。） */
+function amapRouteUrl(fromCity, toCity, mode) {
+  var m = (mode === 'car' || mode === 'bus' || mode === 'walk') ? mode : 'car';
+  return 'https://uri.amap.com/navigation' +
+    '?from=' + encodeURIComponent(fromCity) +
+    '&to=' + encodeURIComponent(toCity) +
+    '&mode=' + m +
+    '&callnative=1' +
+    '&coordinate=gaode' +
+    '&src=meng-vibe-coding';
+}
+
+/* 12306 官网。⚠️ 12306 没有"带着出发地和目的地直接查"的公开链接格式，
+   只能把人送到首页，让他自己填。这不是偷懒 —— 是没有更好的办法，
+   所以链接旁边的文字要写清"去 12306 查"，不能假装"点开就有结果"。 */
+var URL_12306 = 'https://www.12306.cn/';
+
+/* 这一段路该给哪个链接？返回 {url, text, title} 或 null（飞机不给链接） */
+function lookupLinkFor(leg, option) {
+  var isTrain = option.key === 'highspeed' || option.key === 'normal';
+  var isPlane = option.key === 'plane';
+
+  if (isTrain) {
+    return {
+      url: URL_12306,
+      text: '去 12306 查',
+      title: '打开中国铁路 12306 官网（官方唯一售票站，票价和余票最准）'
+    };
+  }
+  if (isPlane) {
+    /* 飞机刻意不给链接，只留一句提示。
+       写在这里而不是留空，是为了让调用方知道"这是想过的，不是忘了"。 */
+    return null;
+  }
+  // 长途汽车 / 拼车 → 高德看实际路线距离
+  return {
+    url: amapRouteUrl(leg.from, leg.to, 'car'),
+    text: '看实际路线',
+    title: '用高德地图打开「' + leg.from + ' → ' + leg.to + '」的驾车路线（看真实距离）'
+  };
+}
+
+/* 一段路自己的「查路线」链接（跟上面那个"按交通方式给"不一样：
+   这个无论什么交通方式都给高德，用途是【对照我们算的距离准不准】）。 */
+function legRouteLink(leg) {
+  return {
+    url: amapRouteUrl(leg.from, leg.to, 'car'),
+    text: '查路线',
+    title: '用高德地图打开「' + leg.from + ' → ' + leg.to + '」的驾车路线'
+  };
+}
+
+/* 造一个要点新窗口打开的外部链接。
+   为什么要显式 rel="noopener noreferrer"：
+   不加的话，跳过去那个页面能通过 window.opener 反过来操作我们的页面，
+   是个已知的安全问题。target="_blank" 必须配这个属性。 */
+function makeExternalLink(info, className) {
+  var a = document.createElement('a');
+  a.className = className || 'ext-link';
+  a.href = info.url;
+  a.textContent = info.text;
+  a.title = info.title;
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  return a;
+}
+
+
 /* ============================================================
    三、分天数（PRD F3，核心算法）
    规则：
@@ -1710,6 +1808,11 @@ function renderTransport(split, chosenKeys) {
       : '（距离未知，按估算值）';
     headTd.textContent = (leg.isReturn ? '返程：' : '第 ' + (i + 1) + ' 段：') +
       leg.from + ' → ' + leg.to + kmTxt;
+    /* 段标题后面挂一个「查路线」→ 高德（Day 16）。
+       放在这里而不是每行都放：距离是【整段】的属性，不是某一种交通方式的，
+       一行一个链接会显得很吵。 */
+    headTd.appendChild(document.createTextNode(' '));
+    headTd.appendChild(makeExternalLink(legRouteLink(leg), 'ext-link seg-link'));
     headTr.appendChild(headTd);
     tbody.appendChild(headTr);
 
@@ -1748,6 +1851,16 @@ function renderTransport(split, chosenKeys) {
 
       var td5 = document.createElement('td');
       td5.textContent = o.label;
+      /* 每种交通方式旁边挂一个"去哪核对"的链接（Day 16）。
+         位置选在最后一列（方式说明列）：链接是"这一行这个选项"的补充信息，
+         跟它的说明文字待在一起最自然。
+         飞机那种 option 不给链接（函数返回 null），这里就不 append，
+         但会在下面的段尾提示里统一说明"机票请查航司官网"。 */
+      var lk = lookupLinkFor(leg, o);
+      if (lk) {
+        td5.appendChild(document.createTextNode(' '));
+        td5.appendChild(makeExternalLink(lk, 'ext-link'));
+      }
 
       tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3);
       tr.appendChild(td4); tr.appendChild(td5);
@@ -1761,8 +1874,10 @@ function renderTransport(split, chosenKeys) {
     /* 这一段有没有"没数据、只能估"的情况（Day 14 加）。
        有的话，结论句后面再补一句，说明这个数字是怎么来的。 */
     var hasEstimate = false;
+    var hasPlane = false;
     for (var q = 0; q < opts.length; q++) {
-      if (opts[q].estimated) { hasEstimate = true; break; }
+      if (opts[q].estimated) { hasEstimate = true; }
+      if (opts[q].key === 'plane') { hasPlane = true; }
     }
 
     if (fastest !== cheapest) {
@@ -1791,6 +1906,18 @@ function renderTransport(split, chosenKeys) {
       est.textContent = '⚠️ 这一段有城市不在数据表里，票价和耗时是估算值，仅供参考。' +
         '实际请以铁路 12306 / 航司官网为准。';
       notesBox.appendChild(est);
+    }
+
+    /* 这一段有飞机选项 → 说明机票去哪儿查（Day 16）。
+       为什么要专门说一句：其他交通方式都给了核对链接，只有飞机没有。
+       用户会疑惑"为什么这行没有链接"，与其让他猜，不如写明白：
+       不是忘了，是机票没有官方统一查询站。 */
+    if (hasPlane && notesBox) {
+      var air = document.createElement('p');
+      air.className = 'seg-note seg-note-air';
+      air.textContent = '✈️ 这一段可以坐飞机。机票没有统一的官方查询站，' +
+        '请到各航空公司官网查询实际票价。左边的距离可以点上面的「查路线」用高德核对。';
+      notesBox.appendChild(air);
     }
   }
 }

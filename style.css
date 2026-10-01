@@ -1439,6 +1439,71 @@ main, .page-main { flex: 1 0 auto; }
   color: var(--ink);
 }
 
+/* 机票去哪查的提示（Day 16）
+   用蓝色系（--brand 一路的色），跟上面那条橙色的"估算警示"分开 ——
+   这条不是"数字不可靠"的警告，是"这条数据没有官方查询站，请去别处查"的指路。
+   两件事混成一种颜色，用户就分不清哪个是警告、哪个是提示了。 */
+.seg-note-air {
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-left: 3px solid var(--brand);
+  background: var(--brand-soft);
+  border-radius: 0 8px 8px 0;
+  color: var(--ink);
+}
+
+/* ---------- 外部核对链接（Day 16） ----------
+   出现在两个地方：段标题后的「查路线」、每行说明列里的「去 12306 查」。
+   做成一眼能认出"这是个能点的链接"的样子（颜色 + 下划线 + 小箭头），
+   但又不能太抢眼 —— 表格主体是数据，链接只是辅助入口。 */
+.ext-link {
+  color: var(--brand);
+  text-decoration: none;
+  border-bottom: 1px dashed var(--brand);
+  padding-bottom: 1px;
+  font-weight: 500;
+  transition: color .15s, border-color .15s, opacity .15s;
+  white-space: nowrap;
+}
+
+.ext-link::after {
+  content: "↗";
+  font-size: .85em;
+  margin-left: 2px;
+  opacity: .75;
+}
+
+.ext-link:hover,
+.ext-link:focus-visible {
+  color: var(--brand-strong, var(--brand));
+  border-bottom-style: solid;
+  border-bottom-color: currentColor;
+}
+
+/* 键盘用户走到链接上要看得见（不能只在鼠标悬停时有反馈） */
+.ext-link:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* 段标题里那个"查路线"：比行内的链接轻一点，
+   因为它是"整段"的辅助动作，跟数据行不是同一层级。 */
+.ext-link.seg-link {
+  font-weight: 400;
+  font-size: 12.5px;
+}
+
+/* 交通表底下的核对入口总说明（Day 16）
+   用中性的底色，区别于橙色警示 —— 它讲的是"去哪里核对"，不是"数字有问题"。 */
+.lookup-note {
+  margin-top: 14px;
+  padding: 10px 14px;
+  background: var(--surface-3);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+
 /* ---------- 预算结论 ---------- */
 
 .verdict {

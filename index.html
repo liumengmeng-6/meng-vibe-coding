@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>出行规划小助手｜预算内最合适的行程</title>
 
-  <!-- 后面的 ?v=20261001a 是"版本号"，不是路径。
+  <!-- 后面的 ?v=20261001b 是"版本号"，不是路径。
        作用：强迫浏览器在样式更新后重新下载 style.css。
        不加的话，浏览器会把旧的 CSS 存在本地反复用，
        结果就是"我明明改了样式，你打开却没变化"。
        注意：这仍然只是本地文件，不联网，离线照常可用。 -->
-  <link rel="stylesheet" href="style.css?v=20261001a">
+  <link rel="stylesheet" href="style.css?v=20261001b">
 
   <!-- 主题抢先应用：必须在 <body> 画出来之前执行，
        否则选了赛博主题的人刷新时会先闪一下白屏再变黑（很难受）。
@@ -306,6 +306,19 @@
             <tbody></tbody>
           </table>
         </div>
+        <!-- 核对入口的总说明（Day 16）。
+             为什么要专门写这一块：表里给了"去 12306 查""查路线"这些链接，
+             用户点了会跳走。不先说清"这里是什么、跳出去干嘛"，
+             会以为是我们自己算不准。这句话把链接的性质讲明白：
+             表里的数字是估算，链接是让你去官方核对 —— 两者互补，不是修补。 -->
+        <p class="card-note lookup-note">
+          <b>表里的耗时和票价是按距离估算的，不是实时价格。</b>
+          想核实的话：<b>火车票价</b>最准的是
+          <a href="https://www.12306.cn/" class="ext-link" target="_blank" rel="noopener noreferrer"
+             title="打开中国铁路 12306 官网（官方唯一售票站）">12306 官网</a>；
+          <b>路线实际多远</b>可以点每段后面的「查路线」用高德看。
+          这些链接需要联网，断网时主体功能照常可用。
+        </p>
         <div id="transport-notes"></div>
       </div>
       </div><!-- /视图一 整体方案 -->
@@ -387,7 +400,7 @@
 
   <!-- 逻辑脚本：必须是普通 script（不能用 type="module"），否则双击打开时不会执行。
        末尾的 ?v= 是版本号，作用同上面的 style.css：改了脚本你才看得到变化。 -->
-  <script src="app.js?v=20261001a" defer></script>
+  <script src="app.js?v=20261001b" defer></script>
 
 </body>
 </html>
