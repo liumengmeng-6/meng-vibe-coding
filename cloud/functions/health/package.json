@@ -1,0 +1,8 @@
+{
+  "name": "health",
+  "version": "1.0.0",
+  "description": "出行规划小助手 · 后端连通性探针（Day 15 建立）",
+  "main": "index.js",
+  "private": true,
+  "license": "MIT"
+}

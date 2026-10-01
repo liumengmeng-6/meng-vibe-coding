@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>出行规划小助手 · 后端演示页（mock 数据）</title>
+<!--
+  ─────────────────────────────────────────────────────────────
+  这个页面是干什么的？（Day 15 建立，当晚改造为业务演示页）
+    它是「后端探路区」的前端演示页，用来验证两件事：
+      ① 前端能不能部署到公网、别人（比如同学手机）能不能打开
+      ② 前端能不能连上云函数（页面底部的「后端连通性」区块）
+
+  ⚠️ 页面上展示的行程数据是【写死的假数据】（mock），不是真的算出来的。
+     真产品（仓库根目录的 index.html）才是能真的算行程、算钱的。
+     这个页面只是"长成业务页的样子"，用来演示部署链路。
+
+  ⚠️ 它跟主产品的关系：完全分开。主产品双击就能用、不需要联网；
+     这个页面需要联网，而且不影响主产品一个字。
+  ─────────────────────────────────────────────────────────────
+-->
+<style>
+  :root {
+    --bg: #faf7f2;
+    --card: #fff;
+    --ink: #2b2620;
+    --ink-2: #6a6459;
+    --ink-3: #666b74;
+    --border: #e8e1d6;
+    --brand: #2a5fe0;
+    --good: #0f9d58;
+    --bad: #c0392b;
+    --warn: #9c5109;
+    --warn-soft: #fdeedd;
+    --mono: "SF Mono", "Cascadia Mono", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 28px 18px 72px;
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.7 -apple-system, BlinkMacSystemFont, "Segoe UI",
+          "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  .wrap { width: min(820px, 100%); margin: 0 auto; }
+
+  /* ── 顶部：一眼看出这是演示页 ── */
+  .banner {
+    background: var(--warn-soft);
+    border-left: 4px solid var(--warn);
+    border-radius: 0 10px 10px 0;
+    padding: 14px 16px;
+    margin-bottom: 22px;
+    font-size: 14.5px;
+    color: var(--ink);
+  }
+  .banner strong { color: var(--warn); }
+
+  h1 { font-size: 25px; margin: 0 0 6px; }
+  .sub { color: var(--ink-2); margin: 0 0 26px; font-size: 15px; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 18px;
+  }
+  .card h2 {
+    font-size: 17px;
+    margin: 0 0 14px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--border);
+  }
+
+  /* ── 输入摘要 ── */
+  .inputs { display: flex; flex-wrap: wrap; gap: 22px; }
+  .inputs div { font-size: 15px; }
+  .inputs .k { color: var(--ink-3); font-size: 13.5px; display: block; }
+  .inputs .v { font-weight: 600; }
+
+  /* ── 行程表 ── */
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  th, td { padding: 10px 8px; text-align: left; border-bottom: 1px solid var(--border); }
+  th { color: var(--ink-3); font-size: 13.5px; font-weight: 600; }
+  td.num, th.num { text-align: right; }
+  .day-tag {
+    display: inline-block;
+    background: #eef2fb;
+    color: var(--brand);
+    border-radius: 20px;
+    padding: 2px 10px;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  /* ── 花费清单 ── */
+  .cost-row { display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px dashed var(--border); }
+  .cost-row.total { border-bottom: 0; border-top: 2px solid var(--border); margin-top: 6px; padding-top: 12px; font-weight: 700; font-size: 17px; }
+  .cost-row .label { color: var(--ink-2); }
+  .cost-row.total .label { color: var(--ink); }
+  .verdict {
+    margin-top: 14px; padding: 12px 14px; border-radius: 8px;
+    background: #e8f6ee; color: var(--good); font-weight: 600; font-size: 15px;
+  }
+
+  /* ── 清单 ── */
+  .tags { display: flex; gap: 8px; margin-bottom: 14px; }
+  .tag {
+    border: 1px solid var(--border); background: #fdfcfa; color: var(--ink-2);
+    border-radius: 20px; padding: 5px 15px; font-size: 14px; cursor: pointer;
+  }
+  .tag.on { background: var(--brand); border-color: var(--brand); color: #fff; font-weight: 600; }
+  ul.places { list-style: none; padding: 0; margin: 0; }
+  ul.places li {
+    display: flex; justify-content: space-between; gap: 12px;
+    padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 15px;
+  }
+  ul.places .p { color: var(--ink-3); white-space: nowrap; }
+  .empty { color: var(--ink-3); font-size: 14.5px; padding: 12px 0; }
+
+  /* ── 后端连通性（辅助区块）── */
+  .conn { border-top: 3px solid var(--brand); }
+  input[type="url"] {
+    width: 100%; padding: 11px 13px; font: 13.5px/1.5 var(--mono);
+    border: 1px solid var(--border); border-radius: 8px; background: #fdfcfa; color: var(--ink);
+  }
+  input[type="url"]:focus { outline: 2px solid var(--brand); outline-offset: 1px; }
+  button {
+    margin-top: 12px; padding: 10px 20px; font-size: 15px; font-weight: 600;
+    color: #fff; background: var(--brand); border: 0; border-radius: 8px; cursor: pointer;
+  }
+  button:disabled { opacity: .55; cursor: not-allowed; }
+  .status { font-weight: 600; padding: 10px 14px; border-radius: 8px; margin-top: 14px; font-size: 15px; }
+  .status.ok { background: #e8f6ee; color: var(--good); }
+  .status.err { background: #fdecea; color: var(--bad); }
+  .status.run { background: #eef2fb; color: var(--brand); }
+  pre {
+    margin: 12px 0 0; padding: 14px; background: #1e2430; color: #d8e0ea;
+    border-radius: 8px; font: 12.5px/1.6 var(--mono); overflow-x: auto;
+    white-space: pre-wrap; word-break: break-all;
+  }
+  .note { font-size: 14px; color: var(--ink-2); margin-top: 16px; }
+  code { font-family: var(--mono); font-size: 13px; background: #f2efe9; padding: 1px 5px; border-radius: 4px; }
+  @media (max-width: 560px) {
+    body { padding: 20px 12px 60px; }
+    h1 { font-size: 21px; }
+    .inputs { gap: 14px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="banner">
+    <strong>⚠️ 这是演示页（Day 15）</strong><br>
+    下面的行程数据是<strong>写死的假数据（mock）</strong>，不是真算出来的。
+    真产品在仓库根目录的 <code>index.html</code>，双击就能用、不用联网。
+  </div>
+
+  <h1>出行规划小助手 · 演示</h1>
+  <p class="sub">后端探路区的前端页面 —— 用来验证「能部署到公网、别人能打开、前端能连后端」。</p>
+
+  <!-- ① 输入摘要 -->
+  <div class="card">
+    <h2>① 你的输入（假数据）</h2>
+    <div class="inputs">
+      <div><span class="k">出发城市</span><span class="v">武汉</span></div>
+      <div><span class="k">想去的城市</span><span class="v">成都 → 重庆</span></div>
+      <div><span class="k">总天数</span><span class="v">6 天</span></div>
+      <div><span class="k">预算</span><span class="v">¥3000</span></div>
+    </div>
+  </div>
+
+  <!-- ② 每日行程 -->
+  <div class="card">
+    <h2>② 每日行程（mock）</h2>
+    <table>
+      <thead>
+        <tr><th>天</th><th>在哪</th><th>当天大致安排</th><th class="num">当天花费</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><span class="day-tag">第 1 天</span></td><td>在路上</td><td>武汉 → 成都，高铁约 6.5 小时</td><td class="num">¥465</td></tr>
+        <tr><td><span class="day-tag">第 2 天</span></td><td>成都</td><td>大熊猫基地 → 人民公园喝茶</td><td class="num">¥225</td></tr>
+        <tr><td><span class="day-tag">第 3 天</span></td><td>成都</td><td>宽窄巷子 → 玉林串串香</td><td class="num">¥235</td></tr>
+        <tr><td><span class="day-tag">第 4 天</span></td><td>在路上</td><td>成都 → 重庆，高铁约 1.5 小时</td><td class="num">¥226</td></tr>
+        <tr><td><span class="day-tag">第 5 天</span></td><td>重庆</td><td>磁器口 → 洪崖洞夜景</td><td class="num">¥205</td></tr>
+        <tr><td><span class="day-tag">第 6 天</span></td><td>在路上</td><td>重庆 → 武汉，高铁约 6 小时</td><td class="num">¥450</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ③ 花费清单 -->
+  <div class="card">
+    <h2>③ 花费清单（mock）</h2>
+    <div class="cost-row"><span class="label">城际交通</span><span>¥1141</span></div>
+    <div class="cost-row"><span class="label">市内交通</span><span>¥120</span></div>
+    <div class="cost-row"><span class="label">住宿（5 晚）</span><span>¥400</span></div>
+    <div class="cost-row"><span class="label">吃</span><span>¥335</span></div>
+    <div class="cost-row"><span class="label">门票</span><span>¥115</span></div>
+    <div class="cost-row total"><span class="label">合计</span><span>¥2111</span></div>
+    <div class="verdict">✅ 预算内，还剩 ¥889</div>
+    <p class="note">⚠️ 以上数字均为<strong>演示用的假数据</strong>，不是真实计算结果。</p>
+  </div>
+
+  <!-- ④ 美食美景清单 -->
+  <div class="card">
+    <h2>④ 美食美景清单（mock）</h2>
+    <div class="tags">
+      <span class="tag on" data-filter="all">全部</span>
+      <span class="tag" data-filter="en">只吃</span>
+      <span class="tag" data-filter="play">只玩</span>
+    </div>
+    <ul class="places" id="places"></ul>
+    <p class="empty" id="places-empty" hidden>这个筛选下没有条目。</p>
+  </div>
+
+  <!-- ⑤ 后端连通性（辅助） -->
+  <div class="card conn">
+    <h2>⑤ 后端连通性（这个是真的）</h2>
+    <p class="note" style="margin-top:0">
+      上面全是假数据，但<strong>这一块是真的</strong> —— 它真的会去请求云函数。
+      填上后端地址点一下，能返回 JSON 就说明这条链路是通的。
+    </p>
+    <input type="url" id="endpoint" placeholder="https://你的环境ID.service.tcloudbase.com/api/health"
+           value="" autocomplete="off" spellcheck="false">
+    <button id="btn-test">测试连通性</button>
+    <div id="out"></div>
+  </div>
+
+  <p class="note">
+    <strong>这个页面跟主产品的关系</strong>：主产品（<code>index.html</code>）完全离线，双击就能用，
+    一行代码都没动。这个页面只是演示部署链路用的，不参与主产品的任何功能。
+    详见 <code>cloud/README.md</code>。
+  </p>
+
+</div>
+
+<script>
+/* ───────────────────────────────────────────────────────────
+   一、清单数据 + 筛选（这一段是【真的在跑】的交互，
+   数据本身是假的，但筛选逻辑跟主产品一致）
+   ─────────────────────────────────────────────────────────── */
+var PLACES = [
+  { name: '龙抄手（总店）',     type: 'en',   city: '成都', price: 20 },
+  { name: '玉林串串香',         type: 'en',   city: '成都', price: 45 },
+  { name: '蛋烘糕（街边小摊）', type: 'en',   city: '成都', price: 8  },
+  { name: '大熊猫繁育研究基地', type: 'play', city: '成都', price: 55 },
+  { name: '人民公园（鹤鸣茶社）', type: 'play', city: '成都', price: 30 },
+  { name: '宽窄巷子',           type: 'play', city: '成都', price: 0  },
+  { name: '重庆小面（街边面馆）', type: 'en',  city: '重庆', price: 12 },
+  { name: '老火锅（社区店）',     type: 'en',  city: '重庆', price: 70 },
+  { name: '酸辣粉 / 山城小汤圆', type: 'en',   city: '重庆', price: 15 },
+  { name: '洪崖洞',               type: 'play', city: '重庆', price: 0  },
+  { name: '长江索道',             type: 'play', city: '重庆', price: 30 },
+  { name: '磁器口古镇',           type: 'play', city: '重庆', price: 0  }
+];
+
+var elPlaces = document.getElementById('places');
+var elEmpty  = document.getElementById('places-empty');
+
+function renderPlaces(filter) {
+  var list = PLACES.filter(function (p) {
+    return filter === 'all' ? true : p.type === filter;
+  });
+
+  elPlaces.innerHTML = '';
+  list.forEach(function (p) {
+    var li = document.createElement('li');
+    var left = document.createElement('span');
+    left.textContent = p.name + '（' + p.city + '）';
+    var right = document.createElement('span');
+    right.className = 'p';
+    right.textContent = p.price === 0 ? '免费' : '约 ¥' + p.price;
+    li.appendChild(left);
+    li.appendChild(right);
+    elPlaces.appendChild(li);
+  });
+
+  /* 该档下没有条目时，明确说"没有"，而不是留一片空白 */
+  elEmpty.hidden = list.length > 0;
+  if (elEmpty.hidden) {
+    /* 有内容时，顺便在开头显示命中条数 */
+    var info = document.createElement('li');
+    info.style.color = 'var(--ink-3)';
+    info.style.fontSize = '13.5px';
+    info.textContent = '共 ' + list.length + ' 条';
+    elPlaces.insertBefore(info, elPlaces.firstChild);
+  }
+}
+
+Array.prototype.forEach.call(document.querySelectorAll('.tag'), function (t) {
+  t.addEventListener('click', function () {
+    Array.prototype.forEach.call(document.querySelectorAll('.tag'), function (x) {
+      x.classList.remove('on');
+    });
+    t.classList.add('on');
+    renderPlaces(t.getAttribute('data-filter'));
+  });
+});
+
+renderPlaces('all');
+
+/* ───────────────────────────────────────────────────────────
+   二、后端连通性检测（这一段【真的联网】）
+   ─────────────────────────────────────────────────────────── */
+var elEndpoint = document.getElementById('endpoint');
+var elBtn      = document.getElementById('btn-test');
+var elOut      = document.getElementById('out');
+var STORAGE_KEY = 'cloud-health-endpoint';
+
+try {
+  var saved = localStorage.getItem(STORAGE_KEY);
+  if (saved) { elEndpoint.value = saved; }
+} catch (e) { /* 隐身模式下可能不可用，忽略 */ }
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function show(cls, text, detail) {
+  var html = '<div class="status ' + cls + '">' + text + '</div>';
+  if (detail) { html += '<pre>' + escapeHtml(detail) + '</pre>'; }
+  elOut.innerHTML = html;
+}
+
+async function testHealth() {
+  var url = elEndpoint.value.trim();
+
+  if (!url) {
+    show('err', '请先填后端地址',
+      '地址是空的。先把云函数部署好，把公网地址粘到上面。');
+    return;
+  }
+
+  try { localStorage.setItem(STORAGE_KEY, url); } catch (e) {}
+
+  elBtn.disabled = true;
+  show('run', '正在请求…', url);
+
+  var started = Date.now();
+
+  try {
+    var res  = await fetch(url, { method: 'GET' });
+    var ms   = Date.now() - started;
+    var text = await res.text();
+    var pretty = text;
+    try { pretty = JSON.stringify(JSON.parse(text), null, 2); } catch (e) {}
+
+    if (res.ok) {
+      show('ok', '✅ 连通了（HTTP ' + res.status + '，用时 ' + ms + ' 毫秒）', pretty);
+    } else {
+      show('err', '❌ 服务器返回 HTTP ' + res.status, pretty);
+    }
+  } catch (err) {
+    show('err', '❌ 请求失败：' + err.message,
+      '常见原因：\n' +
+      '1. 地址写错（多空格、少了 /api/health）\n' +
+      '2. 云函数还没部署成功\n' +
+      '3. 跨域被拦（Day 16–20 会配）\n' +
+      '4. 你现在断网了\n\n' +
+      '当前测试的地址：\n' + url);
+  } finally {
+    elBtn.disabled = false;
+  }
+}
+
+elBtn.addEventListener('click', testHealth);
+elEndpoint.addEventListener('keydown', function (e) {
+  if (e.key === 'Enter') { testHealth(); }
+});
+</script>
+</body>
+</html>
