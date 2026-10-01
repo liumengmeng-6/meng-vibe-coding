@@ -240,6 +240,18 @@ function normalizeCityName(name) {
   return CN_CITY_ALIAS[n] || n;
 }
 
+/* 「这个城市不支持」那句话 —— 只写一遍（Day 16）。
+   为什么要抽出来：同一个意思现在要在【三个地方】说 ——
+     ① 点「添加」时（输入区红字）
+     ② 离开「出发城市」输入框时（输入区红字）
+     ③ 兜底：点「生成方案」时（万一前面两条被绕过）
+   要是三处各写一遍，将来改口径（比如支持范围变了）必有漏改的。
+   所以：文案只在这里定义，别处一律调这个函数拿。 */
+function unsupportedCityMessage(name) {
+  return '「' + String(name).trim() + '」暂时不支持。' +
+    '目前只能规划国内城市，比如：北京、上海、广州、成都、重庆、西安。';
+}
+
 /* 常见城市的大致坐标（只用于估算距离，不画地图、不联网） */
 var CITY_COORDS = {
   '北京': { lat: 39.90, lng: 116.41 },
@@ -939,8 +951,7 @@ function validateInput(input) {
      放在 E2 之后：得先有城市，才谈得上"这个城市认不认识"。
      出发地和目的地都要查 —— 出发地填「东京」同样算不出距离。 */
   if (!errors.fromCity && input.fromCity && !isKnownChineseCity(input.fromCity)) {
-    errors.fromCity = '「' + String(input.fromCity).trim() + '」暂时不支持。' +
-      '目前只能规划国内城市，比如：北京、上海、广州、成都、重庆、西安。';
+    errors.fromCity = unsupportedCityMessage(input.fromCity);
   }
   if (!errors.cities && input.cities && input.cities.length > 0) {
     var unknown = [];
@@ -950,8 +961,7 @@ function validateInput(input) {
       }
     }
     if (unknown.length > 0) {
-      errors.cities = '「' + unknown.join('」「') + '」暂时不支持。' +
-        '目前只能规划国内城市，比如：北京、上海、广州、成都、重庆、西安。';
+      errors.cities = unsupportedCityMessage(unknown.join('」「'));
     }
   }
 
@@ -2660,12 +2670,63 @@ function renderCityChips() {
 }
 
 /* 往「想去的城市」下方那条提示位上写一句话。
-   三个地方共用：空输入 / 已经加过 / 超过 4 个。
-   （Day 10 收尾追加：原来前两种情况完全静默，用户不知道发生了什么） */
+   四个地方共用：空输入 / 不是国内城市 / 已经加过 / 超过 4 个。
+   （Day 10 收尾追加：原来前两种情况完全静默，用户不知道发生了什么）
+   （Day 16：文案改由 unsupportedCityMessage 统一提供） */
 function setCityHint(msg) {
   var el = document.getElementById('error-to-city');
   el.hidden = false;
   el.textContent = msg;
+}
+
+/* 「出发城市」输完就查一次（Day 16 用户反馈后加）。
+   什么时候触发：焦点离开输入框时（blur）。
+   为什么不在打字途中查：输入框里是「武」的时候还没输完，
+   那时候报"不支持"是冤枉他 —— 输完再判才合理。
+   为什么在这里判而不是只在"生成"时判：跟添加城市一个道理，
+   错了要立刻说，不要攒着。
+   注意：空着不报错 —— 「没填」是 E1 那条规则的事，
+   两条规则各管一头，别在这里重复报同一件事。
+
+   ⚠️ 查对了要【把旧红字擦掉】（第一版漏了这一步）：
+   用户看到「东京 不支持」→ 改成「武汉」→ 红字还在，
+   他会以为改了不起作用。所以这里两条路都走：
+   认出来就 clear，认不出来才报。 */
+function checkFromCity() {
+  var el = document.getElementById('from-city');
+  var name = el.value.trim();
+  var box = document.getElementById('error-from-city');
+
+  if (name === '') {
+    /* 空着：如果之前报过"不支持"，现在清空了也该擦掉 ——
+       留着会让人以为"空着也报错"。擦掉之后交给 E1 管。 */
+    clearFieldError('error-from-city');
+    return;
+  }
+
+  if (isKnownChineseCity(name)) {
+    clearFieldError('error-from-city');
+    return;
+  }
+
+  setFieldError('error-from-city', unsupportedCityMessage(name));
+}
+
+/* 往某个字段下面的红字位上写一句话 / 擦掉它。
+   抽出来是因为「出发城市」现在有【两处】要写同一个位置：
+   ① 输完立刻查（checkFromCity）② 点生成时的兜底校验（showErrors）。 */
+function setFieldError(id, msg) {
+  var el = document.getElementById(id);
+  if (!el) { return; }
+  el.hidden = false;
+  el.textContent = msg;
+}
+
+function clearFieldError(id) {
+  var el = document.getElementById(id);
+  if (!el) { return; }
+  el.hidden = true;
+  el.textContent = '';
 }
 
 function addCity() {
@@ -2674,6 +2735,21 @@ function addCity() {
 
   if (name === '') {
     setCityHint('先输入一个城市名，再点「添加」');
+    input.focus();
+    return;
+  }
+
+  /* ⚠️ 这里拦住"不是国内城市"的（Day 16 用户反馈后加）。
+     为什么必须在【添加】这一步拦，而不是等点「生成方案」：
+     点添加就是把城市收进列表 —— 收进来的那一刻，用户默认它"能用"了。
+     等到生成才报错，等于让他填完一堆再回头改，白填。
+     所以：认不出来就【不进列表】，输入框里的字保留（他好改），
+     红字说清楚为什么。
+     注意顺序：放在"重复"和"超 4 个"【之前】——
+     因为那两条都是"这个城市本身没问题，只是加不进去"，
+     而这条是"这个城市根本用不了"，性质更严重，该先说。 */
+  if (!isKnownChineseCity(name)) {
+    setCityHint(unsupportedCityMessage(name));
     input.focus();
     return;
   }
@@ -3235,6 +3311,13 @@ function initApp() {
   document.getElementById('to-city-input').addEventListener('keydown', function (e) {
     if (e.key === 'Enter') { e.preventDefault(); addCity(); }
   });
+
+  /* 「出发城市」输完就查（Day 16）。
+     用 blur（焦点离开）而不是 input（每打一个字）——
+     见 checkFromCity 里的说明：打一半就报错是冤枉用户。
+     另外补一个 change：鼠标点「添加」按钮时也会先触发 blur，
+     所以正常操作路径已经覆盖；change 是给"改完直接提交"这类情况的兜底。 */
+  document.getElementById('from-city').addEventListener('blur', checkFromCity);
 
   /* ---------- 视图标签（Day 13） ----------
      三个标签：点一下切视图。

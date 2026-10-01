@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>出行规划小助手｜预算内最合适的行程</title>
 
-  <!-- 后面的 ?v=20260930a 是"版本号"，不是路径。
+  <!-- 后面的 ?v=20261001a 是"版本号"，不是路径。
        作用：强迫浏览器在样式更新后重新下载 style.css。
        不加的话，浏览器会把旧的 CSS 存在本地反复用，
        结果就是"我明明改了样式，你打开却没变化"。
        注意：这仍然只是本地文件，不联网，离线照常可用。 -->
-  <link rel="stylesheet" href="style.css?v=20260930a">
+  <link rel="stylesheet" href="style.css?v=20261001a">
 
   <!-- 主题抢先应用：必须在 <body> 画出来之前执行，
        否则选了赛博主题的人刷新时会先闪一下白屏再变黑（很难受）。
@@ -57,8 +57,11 @@
       <h2 class="card-title">① 填一下你的计划</h2>
 
       <div class="field">
-        <label for="from-city">出发城市 <span class="required">*</span></label>
+        <label for="from-city">出发城市 <span class="required">*</span>
+          <span class="hint">国内城市</span>
+        </label>
         <input type="text" id="from-city" placeholder="例如：武汉" maxlength="10" autocomplete="off">
+        <p class="field-note">目前只支持国内城市，比如：北京、上海、广州、成都、重庆、西安。</p>
         <p class="error" id="error-from-city" hidden></p>
       </div>
 
@@ -70,13 +73,18 @@
           <input type="text" id="to-city-input" placeholder="输入城市名后按「添加」，例如：西安" maxlength="10" autocomplete="off">
           <button type="button" class="btn btn-ghost" id="btn-add-city">添加</button>
         </div>
+        <!-- 红字紧跟在输入框下面（Day 16 调整位置）。
+             原来它在最底下、排在"按游玩顺序填写"那块蓝框后面 ——
+             用户点「添加」时眼睛在按钮那儿，提示跑到底下根本看不见。
+             报错要贴在出错的控件旁边，这是基本要求。 -->
+        <p class="error" id="error-to-city" hidden></p>
         <div class="chips" id="city-chips" aria-live="polite"></div>
+        <p class="field-note">目前只支持国内城市；加了别的城市会当场提示，不会加进列表。</p>
         <p class="field-note">内置了成都、重庆的推荐清单；其他城市也能去，清单自己添加。</p>
         <p class="order-note">
           <b>请按游玩顺序填写</b>（先去的写前面）。例：武汉 → 成都 → 重庆，就先加成都、再加重庆。
           系统会算「武汉→成都→重庆→武汉」的完整往返。
         </p>
-        <p class="error" id="error-to-city" hidden></p>
       </div>
 
       <div class="field">
@@ -379,7 +387,7 @@
 
   <!-- 逻辑脚本：必须是普通 script（不能用 type="module"），否则双击打开时不会执行。
        末尾的 ?v= 是版本号，作用同上面的 style.css：改了脚本你才看得到变化。 -->
-  <script src="app.js?v=20260930a" defer></script>
+  <script src="app.js?v=20261001a" defer></script>
 
 </body>
 </html>
