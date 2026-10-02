@@ -32,7 +32,10 @@ var PRICES = {
 /* ============================================================
    一、内置城市清单（成都、重庆各 6 条 = 3 吃 + 3 玩）
    AC10 要求：每城至少 6 条，每条都有 名称 / 类型 / 参考花费
-   口径（PRD F7）：清单里的花费【只显示，不计入总花费合计】
+   口径（PRD F7）：内置清单的花费【只显示，不进总花费合计】——
+     因为那只是"给你看看的建议"，用户并没选中任何一条，替他算钱没道理。
+   ⚠️ 别把这条套到"用户自己添加的地点"上：那个要进总账（按「顶替」进，见
+     下面的 pickAmountsByCity；规则见 PRD F8，理由见 TECH_DESIGN 约束 11）。
    ============================================================ */
 
 var CITY_HIGHLIGHTS = {
@@ -648,11 +651,78 @@ function splitDaysWithModes(fromCity, cities, totalDays, pickKeys) {
                   这样切到"性价比方案"时总价才会跟着变）
      市内交通 = 20 × 总天数
      住宿     = 90 × (总天数 − 1)
-     吃       = 80 × 总天数
-     门票     = 60 × 总天数
+     吃       = 各城 max(80 × 该城天数, 该城自填"吃"合计) + 80 × 在途天数
+     门票     = 各城 max(60 × 该城天数, 该城自填"玩"合计) + 60 × 在途天数
+
+   Day 17 改动：【吃 / 门票】从"全局天数 × 标准"改成"按城市取较大值"。
+     为什么要这么改 —— 用户自己列的地点，钱不能直接加上去：
+       总账里的「吃 80/天」「门票 60/天」本来就是【按人均估】出来的，
+       它已经包含"要吃几顿、要买几张门票"。你直接加，就是同一笔钱算两遍，
+       总价会虚高，而"够不够"恰恰是本工具的核心价值 → 会误报"超支"。
+     改成「取较大值」= 拿"你列的具体花费"去【顶替】"这一城的平均估算"：
+       · 你列得比估算高 → 按你列的算（总价涨：你知道得比平均值更具体）
+       · 你列得比估算低 → 仍按估算算（一顿饭 ≠ 一整天的饭钱）
+       · 你没填花费     → 按估算算（等于没变）
    ============================================================ */
 
-function calcCost(legs, totalDays) {
+/* 把某座城市里"用户自己添加的地点"按类别汇总。
+   只算 price > 0 的条目 —— 没填花费等于没提供信息，计 0（也就不会影响总价）。 */
+function selfAddedSumByCity(city) {
+  var list = selfAdded[city] || [];
+  var en = 0;
+  var play = 0;
+  for (var i = 0; i < list.length; i++) {
+    var price = Number(list[i].price) || 0;
+    if (price <= 0) continue;
+    if (list[i].type === 'en') { en += price; } else { play += price; }
+  }
+  return { en: en, play: play };
+}
+
+/* 逐城比较"标准"与"你列的合计"，取较大值加起来。
+   返回里带上"哪些城改用了你列的、哪些被吸收了"，供明细文案使用 ——
+   不说清这两件事，用户会以为"我加了地点怎么总价没反应"（静默失败）。 */
+function pickAmountsByCity(plan, perDay, pick) {
+  var sum = 0;
+  var replaced = [];   // 你列的高于该城标准 → 按你列的算
+  var absorbed = [];   // 你列了、但没超标准 → 仍按标准算
+  var hasAny = false;
+
+  for (var i = 0; i < plan.length; i++) {
+    var standard = perDay * plan[i].days;
+    var mine = pick(plan[i].city);
+    if (mine > 0) hasAny = true;
+
+    if (mine > standard) {
+      sum += mine;
+      replaced.push(plan[i].city);
+    } else {
+      sum += standard;
+      if (mine > 0) absorbed.push(plan[i].city);
+    }
+  }
+  return { sum: sum, replaced: replaced, absorbed: absorbed, hasAny: hasAny };
+}
+
+/* 生成"吃 / 门票"这两行的明细文字。
+   把"哪些城改按你列的算了""哪些城你列了但没超标准"都写出来 ——
+   这两种情况用户都看不见钱的变化方向，必须用文字补上。 */
+function perDayDetail(perDay, totalDays, picked) {
+  var text = perDay + ' 元/天 × ' + totalDays + ' 天';
+  if (picked.replaced.length > 0) {
+    text += '；' + picked.replaced.join('、') + ' 按你列的花费算';
+  }
+  if (picked.absorbed.length > 0) {
+    text += '；' + picked.absorbed.join('、') + ' 你列的花费未超标准，仍按标准算';
+  }
+  return text;
+}
+
+function calcCost(split, totalDays) {
+  var legs        = split.legs || [];
+  var plan        = split.plan || [];
+  var transitDays = split.transitDays || 0;
+
   var intercity = 0;
   var estimatedLegs = 0;   // 有几段用的是"没有数据、只能估"的票价（Day 14 加）
 
@@ -666,10 +736,22 @@ function calcCost(legs, totalDays) {
 
   var cityTransfer = PRICES.cityTransferPerDay * totalDays;
   var hotel        = PRICES.hotelPerNight * Math.max(0, totalDays - 1);
-  var food         = PRICES.foodPerDay * totalDays;
-  var ticket       = PRICES.ticketPerDay * totalDays;
 
-  var total = intercity + cityTransfer + hotel + food + ticket;
+  /* 吃 / 门票：按城市"顶替"，取较大值（Day 17） */
+  var food = pickAmountsByCity(plan, PRICES.foodPerDay, function (c) {
+    return selfAddedSumByCity(c).en;
+  });
+  var ticket = pickAmountsByCity(plan, PRICES.ticketPerDay, function (c) {
+    return selfAddedSumByCity(c).play;
+  });
+
+  /* 在途日没有游玩安排，按标准算。
+     这样"一条自填都没有"时，总价与 Day 17 之前【逐分一致】——
+     改了实现，但没改数字（回归测试盯着这一条）。 */
+  var foodSum   = food.sum   + PRICES.foodPerDay   * transitDays;
+  var ticketSum = ticket.sum + PRICES.ticketPerDay * transitDays;
+
+  var total = intercity + cityTransfer + hotel + foodSum + ticketSum;
 
   /* 城际交通这一行的口径说明。
      为什么要在个别城市没数据时特别写出来：合计里混着估算的钱，
@@ -685,11 +767,12 @@ function calcCost(legs, totalDays) {
       { key: 'intercity',    label: '城际交通', detail: intercityDetail, amount: intercity },
       { key: 'cityTransfer', label: '市内交通', detail: PRICES.cityTransferPerDay + ' 元/天 × ' + totalDays + ' 天', amount: cityTransfer },
       { key: 'hotel',        label: '住宿',     detail: PRICES.hotelPerNight + ' 元/晚 × ' + Math.max(0, totalDays - 1) + ' 晚', amount: hotel },
-      { key: 'food',         label: '吃',       detail: PRICES.foodPerDay + ' 元/天 × ' + totalDays + ' 天', amount: food },
-      { key: 'ticket',       label: '门票',     detail: PRICES.ticketPerDay + ' 元/天 × ' + totalDays + ' 天', amount: ticket }
+      { key: 'food',         label: '吃',       detail: perDayDetail(PRICES.foodPerDay, totalDays, food),     amount: foodSum },
+      { key: 'ticket',       label: '门票',     detail: perDayDetail(PRICES.ticketPerDay, totalDays, ticket), amount: ticketSum }
     ],
     total: total,
-    hasEstimate: estimatedLegs > 0
+    hasEstimate: estimatedLegs > 0,
+    hasSelfAdded: food.hasAny || ticket.hasAny
   };
 }
 
@@ -779,7 +862,7 @@ function buildPlans(input) {
   for (var i = 0; i <= cities.length; i++) cheapKeys.push('cheapest');
   var cheapSplit = splitDaysWithModes(fromCity, cities, totalDays, cheapKeys);
   if (cheapSplit.ok) {
-    var cheapCost = calcCost(cheapSplit.legs, totalDays);
+    var cheapCost = calcCost(cheapSplit, totalDays);
     plans.push({
       id: 'cheapest',
       name: '最省方案',
@@ -813,7 +896,7 @@ function buildPlans(input) {
 
   var valueSplit = splitDaysWithModes(fromCity, cities, totalDays, valueKeys);
   if (valueSplit.ok) {
-    var valueCost = calcCost(valueSplit.legs, totalDays);
+    var valueCost = calcCost(valueSplit, totalDays);
     plans.push({
       id: 'value',
       name: '性价比方案',
@@ -1989,6 +2072,8 @@ function renderCost(cost) {
      先声明会被当成"又一段说明文字"跳过去。 */
   var oldNote = document.getElementById('cost-estimate-note');
   if (oldNote) oldNote.parentNode.removeChild(oldNote);
+  var oldSelfNote = document.getElementById('cost-selfadded-note');
+  if (oldSelfNote) oldSelfNote.parentNode.removeChild(oldSelfNote);
 
   if (cost.hasEstimate) {
     var note = document.createElement('p');
@@ -1997,6 +2082,21 @@ function renderCost(cost) {
     note.textContent = '⚠️ 上面的城际交通含估算值 —— 有城市不在数据表里（目前覆盖 24 个主要城市），' +
       '票价和耗时按同类路线估算，仅供参考。实际请以铁路 12306 / 航司官网为准。';
     if (tbody.parentNode) tbody.parentNode.appendChild(note);
+  }
+
+  /* 用户自己添加了带花费的地点时，必须说明这些钱是怎么进账的。
+     为什么非说不可：进账方式是「顶替」而不是「相加」——
+     你列的没超过该城标准时，总价【一分钱都不会变】。
+     不解释，用户就会以为"我加了地点怎么没反应"（静默失败）。
+     这也是碧儿反馈那一条真正想解决的东西。 */
+  if (cost.hasSelfAdded) {
+    var selfNote = document.createElement('p');
+    selfNote.id = 'cost-selfadded-note';
+    selfNote.className = 'field-note';
+    selfNote.textContent = 'ℹ️ 你自己添加的地点按「顶替」进账，不是相加：某一城你列的花费' +
+      '高于该城的估算标准时，那一城就按你列的算；低于时仍按标准算（一顿饭不等于一整天的饭钱）。' +
+      '直接相加会把同一天的吃和门票算两遍，总价就虚高了。';
+    if (tbody.parentNode) tbody.parentNode.appendChild(selfNote);
   }
 
   // 合计金额滚上去
@@ -2706,9 +2806,16 @@ function refreshSelfSubtotal(city, el) {
     return;
   }
   var sum = 0;
-  for (var i = 0; i < list.length; i++) sum += list[i].price;
+  // 用 Number() 兜一下：万一 localStorage 里被手工塞了字符串价格，
+  // 直接 += 会变成字符串拼接（'050' 这种），跟总账口径也对不上。
+  for (var i = 0; i < list.length; i++) sum += Number(list[i].price) || 0;
+
+  /* Day 17：这行小计以前写的是"不计入上面的总花费"，现在口径改了。
+     口径：按「顶替」进总账 —— 有没有真的让总价上涨，要看它有没有超过
+     该城市这几天的估算标准。所以这里只说规则，不替它下结论。 */
   el.textContent = '自填地点（参考）：共 ' + list.length + ' 条，合计约 ¥' + sum +
-                   ' —— 这一行同样不计入上面的总花费。';
+                   ' —— 这笔钱会按「顶替」算进总花费，超过该城的估算标准才会让它上涨；' +
+                   '明细见「账本」里的「吃 / 门票」两行。';
 }
 
 /* 自填数据一变（添加 / 删除），把该同步的地方【一次性全刷新】
@@ -2970,11 +3077,11 @@ function doGenerate(input, token) {
     // 理论上不会走到这里，保底用单套算法渲染
     plans = [{
       id: 'cheapest', name: '最省方案', tagline: '',
-      legs: single.legs, split: single, cost: calcCost(single.legs, input.days),
-      total: calcCost(single.legs, input.days).total,
+      legs: single.legs, split: single, cost: calcCost(single, input.days),
+      total: calcCost(single, input.days).total,
       transitDays: single.transitDays, playableDays: single.playableDays
     }];
-    plans[0].cost = calcCost(single.legs, input.days);
+    plans[0].cost = calcCost(single, input.days);
   }
 
   // 默认选中「最省方案」（口径与 PRD 验证算例一致）
