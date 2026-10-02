@@ -654,7 +654,7 @@ function splitDaysWithModes(fromCity, cities, totalDays, pickKeys) {
      吃       = 各城 max(80 × 该城天数, 该城自填"吃"合计) + 80 × 在途天数
      门票     = 各城 max(60 × 该城天数, 该城自填"玩"合计) + 60 × 在途天数
 
-   Day 17 改动：【吃 / 门票】从"全局天数 × 标准"改成"按城市取较大值"。
+   本次改动：【吃 / 门票】从"全局天数 × 标准"改成"按城市取较大值"。
      为什么要这么改 —— 用户自己列的地点，钱不能直接加上去：
        总账里的「吃 80/天」「门票 60/天」本来就是【按人均估】出来的，
        它已经包含"要吃几顿、要买几张门票"。你直接加，就是同一笔钱算两遍，
@@ -737,7 +737,7 @@ function calcCost(split, totalDays) {
   var cityTransfer = PRICES.cityTransferPerDay * totalDays;
   var hotel        = PRICES.hotelPerNight * Math.max(0, totalDays - 1);
 
-  /* 吃 / 门票：按城市"顶替"，取较大值（Day 17） */
+  /* 吃 / 门票：按城市"顶替"，取较大值 */
   var food = pickAmountsByCity(plan, PRICES.foodPerDay, function (c) {
     return selfAddedSumByCity(c).en;
   });
@@ -746,7 +746,7 @@ function calcCost(split, totalDays) {
   });
 
   /* 在途日没有游玩安排，按标准算。
-     这样"一条自填都没有"时，总价与 Day 17 之前【逐分一致】——
+     这样"一条自填都没有"时，总价与本次改动之前【逐分一致】——
      改了实现，但没改数字（回归测试盯着这一条）。 */
   var foodSum   = food.sum   + PRICES.foodPerDay   * transitDays;
   var ticketSum = ticket.sum + PRICES.ticketPerDay * transitDays;
@@ -2810,7 +2810,7 @@ function refreshSelfSubtotal(city, el) {
   // 直接 += 会变成字符串拼接（'050' 这种），跟总账口径也对不上。
   for (var i = 0; i < list.length; i++) sum += Number(list[i].price) || 0;
 
-  /* Day 17：这行小计以前写的是"不计入上面的总花费"，现在口径改了。
+  /* 这行小计以前写的是"不计入上面的总花费"，现在口径改了。
      口径：按「顶替」进总账 —— 有没有真的让总价上涨，要看它有没有超过
      该城市这几天的估算标准。所以这里只说规则，不替它下结论。 */
   el.textContent = '自填地点（参考）：共 ' + list.length + ' 条，合计约 ¥' + sum +
