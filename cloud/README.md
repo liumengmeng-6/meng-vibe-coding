@@ -32,25 +32,87 @@ cloud/
 │   ├── schema.sql     ← 建表：两张核心表的字段、约束、注释
 │   └── seed.sql       ← 灌数据：370 个城市 + 12 条地点
 ├── functions/         ← 云函数（跑在服务器上的代码）
-│   └── health/        ← 目前只有一个：健康检查
-│       ├── index.js
-│       └── package.json
+│   ├── health/        ← 健康检查：不读数据，只回一句"我还活着"
+│   ├── cities/        ← 城市白名单：读 cities 表（370 行）
+│   └── places/        ← 美食美景清单：按城市读 places 表
+│       └── （每个函数都是 index.js + package.json，零依赖）
 └── mock/              ← 前端演示页
     └── index.html     ← 展示一套假行程 + 底下能测后端连通性
 ```
 
 ---
 
-## 现在有什么（Day 15–16）
+## 现在有什么（Day 15–17）
 
 | 东西 | 状态 | 说明 |
 |---|---|---|
 | 云函数 `GET /api/health` | ✅ **已部署，公网可访问** | 不读数据，只回一句"我还活着" |
+| 云函数 `GET /api/cities` | ✅ **已部署，公网可访问**（Day 17） | 读 `cities` 表，返回 **370** 个城市 |
+| 云函数 `GET /api/places` | ✅ **已部署，公网可访问**（Day 17） | 按城市名读 `places` 表，如 `?city=成都` → 6 条 |
 | 前端演示页 `mock/index.html` | ✅ **已部署，公网可访问** | 展示假行程数据 + 能测后端连通性 |
-| 接口契约 `api-contract.md` | ✅ 完成 | 含「动作 ↔ 接口」盘点表 + 6 个接口登记 |
+| 接口契约 `api-contract.md` | ✅ 完成 | 含「动作 ↔ 接口」盘点表 + 3 个接口的**完整契约** + 登记表 |
 | **数据库两张表** | ✅ **已建好、数据已入库**（Day 16） | `cities` 370 行 + `places` 12 行，见下面「数据库」一节 |
 
-**还没做**：真实业务接口（Day 16–20）、正式跨域配置（第 3 周内）。
+**还没做**：两个**写**接口（`POST /api/places`、`DELETE /api/places/:id`，Day 18–19）。
+
+---
+
+## 三个接口（Day 17 已全部上线）
+
+> **完整契约（请求参数 / 字段说明 / 各种失败情况）在 `api-contract.md` 第三～五节。**
+> 这里只是一张"找得到路"的速查表。
+
+| 接口 | 地址 | 需要什么 | 返回什么 |
+|---|---|---|---|
+| **健康检查** | `…/api/health` | 什么都不用 | `{ok, service, message, time, uptimeSeconds}` |
+| **城市白名单** | `…/api/cities` | 什么都不用 | `data` = 370 个 `{id, name, created_at}` |
+| **美食美景清单** | `…/api/places?city=成都` | **`city` 必填**（城市名） | `data` = 该城的地点数组 |
+
+三个接口的**完整前缀**都是：
+
+```
+https://travel-planner-d4g8o6mee9d231c64.service.tcloudbase.com
+```
+
+### 统一的返回形状（前端只认这一种）
+
+```json
+成功：{ "ok": true,  "data": [...], "error": null }
+失败：{ "ok": false, "data": null,  "error": "人能看懂的中文说明" }
+```
+
+> ⚠️ **三个字段永远都在** —— 成功时 `error` 是 `null`、失败时 `data` 是 `null`。
+> 前端不用先判断"字段存不存在"，写法简单一半。
+
+**两条要记住的细节**（都写在契约第二节「例外」里）：
+
+| 细节 | 说明 |
+|---|---|
+| **字段名是下划线风格** | `city_id`、`created_at` —— 跟数据库列名一样，**不是** `cityId`。用户拍板选的这条 |
+| **`created_at` 末尾没有 `Z`** | 数据库 `timestamp` 原样出来，**不要**当成标准 UTC 时间用 |
+
+### 试一下（浏览器地址栏直接粘）
+
+```
+https://travel-planner-d4g8o6mee9d231c64.service.tcloudbase.com/api/cities
+```
+
+```
+https://travel-planner-d4g8o6mee9d231c64.service.tcloudbase.com/api/places?city=成都
+```
+
+**能看到 JSON 就是通的。** 地址栏 / `curl` 不受跨域限制，是排查问题的第一选择。
+
+### 真库验证（Day 17 做过一次，方法可复用）
+
+想证明"接口读的是真数据库、不是写死的"，就做这个对照：
+
+1. 记下 `…/api/places?city=成都` 里「宽窄巷子」的 `price`（当时是 `0`）
+2. SQL 编辑器跑 `UPDATE places SET price = 1 WHERE name = '宽窄巷子';`
+3. `Ctrl + Shift + R` **强制刷新**接口地址 → `price` 变成 `1`
+4. 改回 `0`
+
+> **第 3 步一定要强制刷新** —— 普通刷新可能读到浏览器缓存，你会以为"没变"。
 
 ---
 

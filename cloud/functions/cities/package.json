@@ -1,0 +1,8 @@
+{
+  "name": "cities",
+  "version": "1.0.0",
+  "description": "出行规划小助手 · GET /api/cities —— 读城市白名单（370 行）",
+  "main": "index.js",
+  "private": true,
+  "license": "MIT"
+}

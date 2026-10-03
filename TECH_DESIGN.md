@@ -41,7 +41,7 @@
 
 | 项目 | 主产品（仓库根目录） | 后端探路区（`cloud/`，Day 15 起） |
 |------|---------------------|--------------------------------|
-| **代码** | `index.html` / `app.js` / `style.css` | `cloud/functions/health/index.js` |
+| **代码** | `index.html` / `app.js` / `style.css` | `cloud/functions/` 下的三个云函数：`health/`、`cities/`、`places/` |
 | **跑在哪** | **浏览器里** | **腾讯云上**（CloudBase 云函数） |
 | **要不要联网** | ❌ 不要 | ✅ 要 |
 | **要不要部署** | ❌ 不用，双击就开 | ✅ 要（控制台上传 / 配置触发路径） |

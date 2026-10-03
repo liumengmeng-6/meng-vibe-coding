@@ -1,0 +1,8 @@
+{
+  "name": "places",
+  "version": "1.0.0",
+  "description": "出行规划小助手 · GET /api/places —— 按城市读美食美景清单（成都/重庆 各 6 条）",
+  "main": "index.js",
+  "private": true,
+  "license": "MIT"
+}
