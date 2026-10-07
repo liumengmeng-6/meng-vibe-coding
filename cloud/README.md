@@ -28,14 +28,16 @@
 cloud/
 ├── README.md          ← 你正在看的这个
 ├── api-contract.md    ← 接口契约：前端和后端的"合同"，也是本部分的唯一仲裁物
+├── 分层设计.md        ← Day 19：为什么把「查数据库」的代码拆进 db.js（含分层示意图）
 ├── db/                ← 数据库脚本（Day 16 加）
 │   ├── schema.sql     ← 建表：两张核心表的字段、约束、注释
 │   └── seed.sql       ← 灌数据：370 个城市 + 12 条地点
 ├── functions/         ← 云函数（跑在服务器上的代码）
 │   ├── health/        ← 健康检查：不读数据，只回一句"我还活着"
 │   ├── cities/        ← 城市白名单：读 cities 表（370 行）
-│   └── places/        ← 美食美景清单：按城市读 places 表
-│       └── （每个函数都是 index.js + package.json，零依赖）
+│   └── places/        ← 美食美景清单：按城市读 places 表（GET 读 / POST 写）
+│   ※ 每个函数都是「index.js（接口层）+ db.js（数据访问层）+ package.json」，零依赖；
+│     db.js 是 Day 19 从 index.js 里拆出来的数据访问层 —— 见「分层设计.md」
 └── mock/              ← 前端演示页
     └── index.html     ← 展示一套假行程 + 底下能测后端连通性
 ```
@@ -49,17 +51,18 @@ cloud/
 | 云函数 `GET /api/health` | ✅ **已部署，公网可访问** | 不读数据，只回一句"我还活着" |
 | 云函数 `GET /api/cities` | ✅ **已部署，公网可访问**（Day 17） | 读 `cities` 表，返回 **370** 个城市 |
 | 云函数 `GET /api/places` | ✅ **已部署，公网可访问**（Day 17） | 按城市名读 `places` 表，如 `?city=成都` → 6 条 |
+| 云函数 `POST /api/places` | ✅ **已部署，公网可访问**（Day 18） | 新增一条用户自填地点；重复 409、缺字段 400 中文 |
 | 前端演示页 `mock/index.html` | ✅ **已部署，公网可访问** | 展示假行程数据 + 能测后端连通性 |
-| 接口契约 `api-contract.md` | ✅ 完成 | 含「动作 ↔ 接口」盘点表 + 3 个接口的**完整契约** + 登记表 |
+| 接口契约 `api-contract.md` | ✅ 完成 | 含「动作 ↔ 接口」盘点表 + 4 个接口的**完整契约** + 登记表 |
 | **数据库两张表** | ✅ **已建好、数据已入库**（Day 16） | `cities` 370 行 + `places` 12 行，见下面「数据库」一节 |
 
-**还没做**：两个**写**接口（`POST /api/places`、`DELETE /api/places/:id`，Day 18–19）。
+**还没做**：`DELETE /api/places/:id`（第 4 周）。
 
 ---
 
-## 三个接口（Day 17 已全部上线）
+## 四个接口（Day 17–18 已全部上线）
 
-> **完整契约（请求参数 / 字段说明 / 各种失败情况）在 `api-contract.md` 第三～五节。**
+> **完整契约（请求参数 / 字段说明 / 各种失败情况）在 `api-contract.md` 第三～五节（POST 见「五之二」）。**
 > 这里只是一张"找得到路"的速查表。
 
 | 接口 | 地址 | 需要什么 | 返回什么 |
@@ -67,8 +70,9 @@ cloud/
 | **健康检查** | `…/api/health` | 什么都不用 | `{ok, service, message, time, uptimeSeconds}` |
 | **城市白名单** | `…/api/cities` | 什么都不用 | `data` = 370 个 `{id, name, created_at}` |
 | **美食美景清单** | `…/api/places?city=成都` | **`city` 必填**（城市名） | `data` = 该城的地点数组 |
+| **新增地点** | `…/api/places`（POST） | JSON：`city`+`name`+`type` 必填 | `201` + `data` = 新增那一行 |
 
-三个接口的**完整前缀**都是：
+四个接口的**完整前缀**都是：
 
 ```
 https://travel-planner-d4g8o6mee9d231c64.service.tcloudbase.com

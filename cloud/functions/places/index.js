@@ -10,6 +10,16 @@
  *   浏览器用 GET 来"读"、用 POST 来"写"，请求最终都落到这里，
  *   所以在函数内部按 httpMethod 分流 —— 而不是开两个函数。
  *
+ * ── Day 19 重构：数据库代码搬家了 ──
+ *   以前这个文件里混着三件事：
+ *     ① 接口的事（收请求、分流、包 {ok,data,error}）
+ *     ② 业务的事（校验字段、城市名换 id、查重）
+ *     ③ 数据库的事（配钥匙、发 HTTP 请求、超时、整理报错）
+ *   现在 ③ **整体搬到了同目录的 `db.js`（数据访问层）**，本文件只留 ①②。
+ *   → 从此本文件里**不再出现 https、不再出现网关地址**，
+ *     读写作法统一成 `db.select(...)` / `db.insert(...)`。
+ *   ⚠️ 改"怎么连数据库"去 db.js；改"接口/业务"改本文件。
+ *
  * 返回什么形状？（全项目统一，见 api-contract.md 第二节）
  *   成功：{ ok: true,  data: ...,  error: null }
  *   失败：{ ok: false, data: null, error: "人能看懂的中文说明" }
@@ -17,28 +27,18 @@
  * ── POST 的防重复是两层保险 ──
  *   第 1 层（函数查重）：插入前先按 城市+名字 查一次，已存在就返回 409，
  *     报错是中文、能看懂，这是用户最常撞到的一种。
- *   第 2 层（数据库兜底）：places 表从 Day 16 起就有
- *     UNIQUE (city_id, name) 联合唯一约束 —— 就算第 1 层查漏了
- *     （比如两个人同时提交），数据库也会当场拒绝，绝不插出重复行。
+ *   第 2 层（数据库兜底）：places 表从 Day 16 起就有 UNIQUE (city_id, name)
+ *     联合唯一约束 —— 就算第 1 层查漏了（比如两个人同时提交），
+ *     数据库也会当场拒绝，绝不插出重复行。
  *
  * ── 校验顺序（缺什么说什么，绝不笼统报错）──
- *   请求体不是 JSON → 400
- *   缺 city        → 400
- *   缺 name        → 400
- *   缺 type        → 400
- *   type 不是 en/play → 400
- *   price 不是非负整数 → 400（price 可不填，不填按 0 算）
- *   note 超过 255 字  → 400（数据库列宽就是 255，先拦住省得撞库）
+ *   请求体不是 JSON → 400 ｜ 缺 city / name / type → 400
+ *   type 不是 en/play → 400 ｜ price 不是非负整数 → 400
+ *   note 超过 255 字 → 400（数据库列宽就是 255，先拦住省得撞库）
  * ─────────────────────────────────────────────────────────────
  */
 
-const https = require('https');
-
-/** 环境 ID。不是机密（它就在公网地址里），写死没关系；也允许用环境变量覆盖。 */
-const ENV_ID = process.env.CLOUDBASE_ENV_ID || 'travel-planner-d4g8o6mee9d231c64';
-
-/** 数据库钥匙。**只从环境变量读，代码里绝不写值。** */
-const API_KEY = process.env.CLOUDBASE_API_KEY || '';
+const db = require('./db.js');
 
 /** 要读写的两张表 */
 const TABLE_CITIES = 'cities';
@@ -51,16 +51,6 @@ const PLACE_FIELDS = 'id,city_id,name,type,price,note,created_at';
 /** 一次最多要多少行（理由见 cities 那个函数的注释） */
 const LIMIT_ROWS = 2000;
 
-/**
- * 请求数据库网关的超时（毫秒）
- *
- * ⚠️ 为什么是 2.5 秒：云函数本身的「执行超时」上限只有 3 秒（免费/体验版，
- *    调大要升级套餐），到点被平台硬砍，函数里等更久没有意义。
- *    留 0.5 秒，好让我们自己返回一句看得懂的中文，而不是平台那句"执行超时"。
- *    将来升级套餐把函数超时调大了，这里跟着放大。
- */
-const TIMEOUT_MS = 2500;
-
 /** 跨域头（Day 18：加了 POST —— 前端要用 POST 写数据了） */
 const CORS_HEADERS = {
   'Content-Type': 'application/json; charset=utf-8',
@@ -70,7 +60,7 @@ const CORS_HEADERS = {
 };
 
 /* ============================================================
-   一、小工具（与 cities 那个函数相同）
+   一、小工具（接口层的活）
    ============================================================ */
 
 function ok(data) {
@@ -136,80 +126,7 @@ function parseBody(event) {
 }
 
 /* ============================================================
-   二、去数据库网关取数 / 写数
-   ============================================================ */
-
-/**
- * 通用请求。Day 17 只有 GET；Day 18 加了 POST（写数据用）。
- * @param {string} path 网关路径，如 /v1/rdb/rest/places?select=...
- * @param {object} [extra] 可选：{ method, body }，body 会被 JSON.stringify
- */
-function requestJson(path, extra) {
-  const method = (extra && extra.method) || 'GET';
-  const bodyStr = (extra && extra.body !== undefined) ? JSON.stringify(extra.body) : null;
-
-  const headers = {
-    'Authorization': 'Bearer ' + API_KEY,
-    'Accept': 'application/json',
-  };
-  if (bodyStr !== null) {
-    headers['Content-Type'] = 'application/json';
-    // Prefer: return=representation —— PostgREST 的说法，
-    // 意思是"插完把它插进去的那一行原样还给我"，这样我们能拿到新 id 和 created_at。
-    headers['Prefer'] = 'return=representation';
-  }
-
-  return new Promise(function (resolve, reject) {
-    const req = https.request(
-      {
-        hostname: ENV_ID + '.api.tcloudbasegateway.com',
-        path: path,
-        method: method,
-        headers: headers,
-      },
-      function (res) {
-        let raw = '';
-        res.setEncoding('utf8');
-        res.on('data', function (chunk) { raw += chunk; });
-        res.on('end', function () {
-          let json = null;
-          try { json = JSON.parse(raw); } catch (e) { json = null; }
-          resolve({ status: res.statusCode, raw: raw, json: json, headers: res.headers || {} });
-        });
-      }
-    );
-
-    req.on('error', reject);
-    req.setTimeout(TIMEOUT_MS, function () {
-      req.destroy(new Error('请求数据库超时（超过 ' + (TIMEOUT_MS / 1000) + ' 秒）'));
-    });
-    if (bodyStr !== null) req.write(bodyStr);
-    req.end();
-  });
-}
-
-function upstreamFail(what, res) {
-  const snippet = String(res.raw || '').slice(0, 300);
-  return {
-    http: 502,
-    body: fail('查' + what + '时数据库网关返回了 ' + res.status + '。原文（截断）：' + snippet),
-  };
-}
-
-/** 钥匙没配时的提示（最容易犯的部署错误，单独给一条说人话的） */
-function noKey() {
-  return {
-    http: 500,
-    body: fail(
-      '云函数还没配数据库钥匙。请到「云函数 → places → 配置 → 环境变量」加一条：' +
-      '名 CLOUDBASE_API_KEY，值填控制台建的 API Key。' +
-      '改完直接刷新本页即可 —— 环境变量是"配置"不是"代码"，不用重新部署。'
-    ),
-  };
-}
-
-/* ============================================================
-   三、POST 的校验（纯函数，不碰网络 —— 本地就能单测）
+   二、业务：POST 的校验（纯函数，不碰网络 —— 本地就能单测）
    ============================================================ */
 
 /**
@@ -269,12 +186,14 @@ function validatePlaceInput(input) {
 }
 
 /* ============================================================
-   四、GET 的老逻辑（Day 17 原样保留，一行没改）
+   三、业务：GET 的读逻辑（Day 17 逻辑，一行没改）
    ============================================================ */
 
 /**
  * 真正干活的地方。
  * @param {string} cityName 城市名，如「成都」
+ *
+ * ⚠️ 注意这里**没有一行 https、没有一行网关地址** —— 那些都搬去 db.js 了。
  */
 async function readPlaces(cityName) {
   // ① 必填校验 —— 先拦在前面，别去白跑两次数据库
@@ -285,7 +204,7 @@ async function readPlaces(cityName) {
     };
   }
 
-  if (!API_KEY) return noKey();
+  if (!db.hasKey()) return { http: 500, body: fail(db.noKeyHint('places')) };
 
   // ② 第 1 步：按名字把城市的 id 查出来
   //    名字里可能有中文，必须 encodeURIComponent 编码后才能放进网址
@@ -293,12 +212,12 @@ async function readPlaces(cityName) {
 
   let cityRes;
   try {
-    cityRes = await requestJson('/v1/rdb/rest/' + TABLE_CITIES + '?' + cityQs);
+    cityRes = await db.select(TABLE_CITIES, cityQs);
   } catch (e) {
     return { http: 502, body: fail('连不上数据库网关：' + e.message) };
   }
 
-  if (cityRes.status !== 200) return upstreamFail('城市', cityRes);
+  if (cityRes.status !== 200) return { http: 502, body: fail(db.upstreamError('城市', cityRes)) };
   if (!Array.isArray(cityRes.json)) {
     return {
       http: 502,
@@ -322,12 +241,12 @@ async function readPlaces(cityName) {
 
   let placeRes;
   try {
-    placeRes = await requestJson('/v1/rdb/rest/' + TABLE_PLACES + '?' + placeQs);
+    placeRes = await db.select(TABLE_PLACES, placeQs);
   } catch (e) {
     return { http: 502, body: fail('连不上数据库网关：' + e.message) };
   }
 
-  if (placeRes.status !== 200) return upstreamFail('地点', placeRes);
+  if (placeRes.status !== 200) return { http: 502, body: fail(db.upstreamError('地点', placeRes)) };
   if (!Array.isArray(placeRes.json)) {
     return {
       http: 502,
@@ -339,15 +258,15 @@ async function readPlaces(cityName) {
 }
 
 /* ============================================================
-   五、POST 的新逻辑（Day 18）
+   四、业务：POST 的写逻辑（Day 18）
    ============================================================ */
 
 /**
  * 新增一条用户自填地点。流程：
- *   ① 校验（第三节那个纯函数）
+ *   ① 校验（上面那个纯函数）
  *   ② 查 cities 表把城市名换成 city_id（和 GET 一样的两步走）
  *   ③ 函数层查重：同城市同名已存在 → 409 中文提示
- *   ④ 插入 places 表（Prefer: return=representation 拿回新行）
+ *   ④ 插入 places 表（db.insert 内部带了 Prefer，会拿回新行）
  *   ⑤ 201 + 新行
  *
  * @param {object} input 已解析的请求体
@@ -360,19 +279,19 @@ async function addPlace(input) {
   }
   const c = v.cleaned;
 
-  if (!API_KEY) return noKey();
+  if (!db.hasKey()) return { http: 500, body: fail(db.noKeyHint('places')) };
 
   // ② 城市名 → city_id（跟 GET 一样的两步走，不写 join）
   const cityQs = 'select=' + CITY_FIELDS + '&name=eq.' + encodeURIComponent(c.city) + '&limit=1';
 
   let cityRes;
   try {
-    cityRes = await requestJson('/v1/rdb/rest/' + TABLE_CITIES + '?' + cityQs);
+    cityRes = await db.select(TABLE_CITIES, cityQs);
   } catch (e) {
     return { http: 502, body: fail('连不上数据库网关：' + e.message) };
   }
 
-  if (cityRes.status !== 200) return upstreamFail('城市', cityRes);
+  if (cityRes.status !== 200) return { http: 502, body: fail(db.upstreamError('城市', cityRes)) };
   if (!Array.isArray(cityRes.json)) {
     return {
       http: 502,
@@ -397,12 +316,12 @@ async function addPlace(input) {
 
   let dupRes;
   try {
-    dupRes = await requestJson('/v1/rdb/rest/' + TABLE_PLACES + '?' + dupQs);
+    dupRes = await db.select(TABLE_PLACES, dupQs);
   } catch (e) {
     return { http: 502, body: fail('查重时连不上数据库网关：' + e.message) };
   }
 
-  if (dupRes.status !== 200) return upstreamFail('重名地点', dupRes);
+  if (dupRes.status !== 200) return { http: 502, body: fail(db.upstreamError('重名地点', dupRes)) };
   if (Array.isArray(dupRes.json) && dupRes.json.length > 0) {
     const existed = dupRes.json[0];
     return {
@@ -412,13 +331,16 @@ async function addPlace(input) {
     };
   }
 
-  // ④ 插入。PostgREST 风格：POST + JSON 体，Prefer 头在 requestJson 里已带
+  // ④ 插入。db.insert 内部就是 POST + JSON 体，并带了 Prefer: return=representation
   let insertRes;
   try {
-    insertRes = await requestJson('/v1/rdb/rest/' + TABLE_PLACES + '?select=' + PLACE_FIELDS, {
-      method: 'POST',
-      body: { city_id: cityId, name: c.name, type: c.type, price: c.price, note: c.note },
-    });
+    insertRes = await db.insert(TABLE_PLACES, {
+      city_id: cityId,
+      name: c.name,
+      type: c.type,
+      price: c.price,
+      note: c.note,
+    }, PLACE_FIELDS);
   } catch (e) {
     return { http: 502, body: fail('写入时连不上数据库网关：' + e.message) };
   }
@@ -438,7 +360,7 @@ async function addPlace(input) {
     };
   }
 
-  // ⑤ 拿回新行。return=representation 正常返回数组；个别网关返回空体，
+  // ⑤ 拿回新行。正常返回数组；个别网关返回空体，
   //    那就把我们发出去的数据补上 city_id 先还回去（id/created_at 让用户用 GET 看）
   let newRow = null;
   if (Array.isArray(insertRes.json) && insertRes.json.length > 0) {
@@ -451,7 +373,7 @@ async function addPlace(input) {
 }
 
 /* ============================================================
-   六、入口：按 HTTP 方法分流
+   五、入口：按 HTTP 方法分流
    ============================================================ */
 
 exports.main = async (event, context) => {
@@ -483,7 +405,7 @@ exports.main = async (event, context) => {
     return { statusCode: 405, headers: CORS_HEADERS, body: JSON.stringify(body) };
   }
 
-  // ---- GET（Day 17 原样保留）----
+  // ---- GET ----
   // 取出 ?city= 后面的值（顺带把两边空格去掉，"成都 "和"成都"当成同一个）
   const query = getQuery(event);
   const cityName = String((query && query.city) || '').trim();
