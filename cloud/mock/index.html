@@ -3,20 +3,24 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>出行规划小助手 · 后端演示页（mock 数据）</title>
+<title>出行规划小助手 · 后端演示台（真实数据）</title>
 <!--
   ─────────────────────────────────────────────────────────────
-  这个页面是干什么的？（Day 15 建立，当晚改造为业务演示页）
-    它是「后端探路区」的前端演示页，用来验证两件事：
-      ① 前端能不能部署到公网、别人（比如同学手机）能不能打开
-      ② 前端能不能连上云函数（页面底部的「后端连通性」区块）
+  这个页面是干什么的？
+    「后端探路区」的前端页面 + 检查台。
+    Day 15 建立；**Day 20 改造：页面数据从"写死的假数据"换成"云上真库"。**
 
-  ⚠️ 页面上展示的行程数据是【写死的假数据】（mock），不是真的算出来的。
-     真产品（仓库根目录的 index.html）才是能真的算行程、算钱的。
-     这个页面只是"长成业务页的样子"，用来演示部署链路。
+    页面打开时会自己发三个请求，把真数据拉下来渲染：
+      GET /api/health            → ① 后端状态
+      GET /api/cities            → ② 城市白名单（370 座）
+      GET /api/places?city=成都  → ③ 美食美景清单
 
-  ⚠️ 它跟主产品的关系：完全分开。主产品双击就能用、不需要联网；
-     这个页面需要联网，而且不影响主产品一个字。
+  ⚠️ 它跟主产品的关系：完全分开。
+     主产品（仓库根目录 index.html）双击就能用、不需要联网，
+     AC14（断网可用）不受影响。这个页面需要联网，改它不会动主产品一个字节。
+
+  ⚠️ 接口地址必须用**默认域名** {环境ID}.service.tcloudbase.com；
+     静态托管域名（*.tcloudbaseapp.com）**不转发接口路由**（访问 /api/xxx 报 NoSuchKey）。
   ─────────────────────────────────────────────────────────────
 -->
 <style>
@@ -43,9 +47,8 @@
     font: 16px/1.7 -apple-system, BlinkMacSystemFont, "Segoe UI",
           "PingFang SC", "Microsoft YaHei", sans-serif;
   }
-  .wrap { width: min(820px, 100%); margin: 0 auto; }
+  .wrap { width: min(860px, 100%); margin: 0 auto; }
 
-  /* ── 顶部：一眼看出这是演示页 ── */
   .banner {
     background: var(--warn-soft);
     border-left: 4px solid var(--warn);
@@ -58,7 +61,17 @@
   .banner strong { color: var(--warn); }
 
   h1 { font-size: 25px; margin: 0 0 6px; }
-  .sub { color: var(--ink-2); margin: 0 0 26px; font-size: 15px; }
+  .sub { color: var(--ink-2); margin: 0 0 18px; font-size: 15px; }
+
+  /* ── 顶部：最后更新时间 + 刷新 ── */
+  .bar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+    background: #fff; border: 1px solid var(--border); border-radius: 12px;
+    padding: 12px 16px; margin-bottom: 18px;
+  }
+  .bar .upd { font-size: 14.5px; color: var(--ink-2); }
+  .bar .upd b { color: var(--ink); font-family: var(--mono); font-size: 14px; }
+  .bar button { margin-top: 0; margin-left: auto; padding: 8px 16px; font-size: 14.5px; }
 
   .card {
     background: var(--card);
@@ -73,61 +86,68 @@
     padding-bottom: 10px;
     border-bottom: 2px solid var(--border);
   }
-
-  /* ── 输入摘要 ── */
-  .inputs { display: flex; flex-wrap: wrap; gap: 22px; }
-  .inputs div { font-size: 15px; }
-  .inputs .k { color: var(--ink-3); font-size: 13.5px; display: block; }
-  .inputs .v { font-weight: 600; }
-
-  /* ── 行程表 ── */
-  table { width: 100%; border-collapse: collapse; font-size: 15px; }
-  th, td { padding: 10px 8px; text-align: left; border-bottom: 1px solid var(--border); }
-  th { color: var(--ink-3); font-size: 13.5px; font-weight: 600; }
-  td.num, th.num { text-align: right; }
-  .day-tag {
-    display: inline-block;
-    background: #eef2fb;
-    color: var(--brand);
-    border-radius: 20px;
-    padding: 2px 10px;
-    font-size: 13px;
-    font-weight: 600;
-    white-space: nowrap;
+  .card h2 .ep {
+    font-family: var(--mono); font-size: 12.5px; font-weight: 400;
+    color: var(--ink-3); background: #f2efe9; padding: 2px 7px;
+    border-radius: 5px; margin-left: 8px;
   }
 
-  /* ── 花费清单 ── */
-  .cost-row { display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px dashed var(--border); }
-  .cost-row.total { border-bottom: 0; border-top: 2px solid var(--border); margin-top: 6px; padding-top: 12px; font-weight: 700; font-size: 17px; }
-  .cost-row .label { color: var(--ink-2); }
-  .cost-row.total .label { color: var(--ink); }
-  .verdict {
-    margin-top: 14px; padding: 12px 14px; border-radius: 8px;
-    background: #e8f6ee; color: var(--good); font-weight: 600; font-size: 15px;
+  /* ── ① 后端状态 ── */
+  .badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 14px; border-radius: 20px; font-size: 14.5px; font-weight: 600;
   }
+  .badge .dot { width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
+  .badge.ok   { background: #e8f6ee; color: var(--good); }
+  .badge.err  { background: #fdecea; color: var(--bad); }
+  .badge.wait { background: #eef2fb; color: var(--brand); }
+  .kv { display: flex; flex-wrap: wrap; gap: 20px; margin-top: 14px; }
+  .kv div { font-size: 14.5px; }
+  .kv .k { color: var(--ink-3); font-size: 13px; display: block; }
+  .kv .v { font-weight: 600; font-family: var(--mono); font-size: 13.5px; }
+
+  /* ── KPI ── */
+  .kpi { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
+  .kpi .n { font-size: 30px; font-weight: 700; color: var(--brand); font-family: var(--mono); }
+  .kpi .u { color: var(--ink-2); font-size: 14.5px; }
+
+  /* ── 搜索 + 城市网格 ── */
+  input[type="text"], input[type="url"] {
+    width: 100%; padding: 11px 13px; font: 14px/1.5 var(--mono);
+    border: 1px solid var(--border); border-radius: 8px; background: #fdfcfa; color: var(--ink);
+  }
+  input[type="text"]:focus, input[type="url"]:focus { outline: 2px solid var(--brand); outline-offset: 1px; }
+  .grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: 8px; margin-top: 14px;
+  }
+  .chip {
+    background: #fdfcfa; border: 1px solid var(--border); border-radius: 7px;
+    padding: 6px 8px; font-size: 14px; text-align: center;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .more { color: var(--ink-3); font-size: 14px; margin-top: 12px; }
 
   /* ── 清单 ── */
-  .tags { display: flex; gap: 8px; margin-bottom: 14px; }
+  .tags { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
   .tag {
     border: 1px solid var(--border); background: #fdfcfa; color: var(--ink-2);
     border-radius: 20px; padding: 5px 15px; font-size: 14px; cursor: pointer;
+    font-family: inherit;
   }
   .tag.on { background: var(--brand); border-color: var(--brand); color: #fff; font-weight: 600; }
+  .tag.city { border-color: var(--brand); color: var(--brand); }
+  .tag.city.on { background: var(--brand); color: #fff; }
   ul.places { list-style: none; padding: 0; margin: 0; }
   ul.places li {
     display: flex; justify-content: space-between; gap: 12px;
     padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 15px;
   }
+  ul.places .nm { min-width: 0; }
+  ul.places .nt { color: var(--ink-3); font-size: 13px; display: block; }
   ul.places .p { color: var(--ink-3); white-space: nowrap; }
   .empty { color: var(--ink-3); font-size: 14.5px; padding: 12px 0; }
 
-  /* ── 后端连通性（辅助区块）── */
-  .conn { border-top: 3px solid var(--brand); }
-  input[type="url"] {
-    width: 100%; padding: 11px 13px; font: 13.5px/1.5 var(--mono);
-    border: 1px solid var(--border); border-radius: 8px; background: #fdfcfa; color: var(--ink);
-  }
-  input[type="url"]:focus { outline: 2px solid var(--brand); outline-offset: 1px; }
   button {
     margin-top: 12px; padding: 10px 20px; font-size: 15px; font-weight: 600;
     color: #fff; background: var(--brand); border: 0; border-radius: 8px; cursor: pointer;
@@ -144,10 +164,14 @@
   }
   .note { font-size: 14px; color: var(--ink-2); margin-top: 16px; }
   code { font-family: var(--mono); font-size: 13px; background: #f2efe9; padding: 1px 5px; border-radius: 4px; }
+  .howto { background: #f7f9ff; border: 1px solid #d9e2fb; border-radius: 10px; padding: 14px 16px; margin-top: 16px; }
+  .howto h3 { margin: 0 0 8px; font-size: 15px; color: var(--brand); }
+  .howto ol { margin: 0; padding-left: 22px; font-size: 14.5px; }
+  .howto li { margin-bottom: 6px; }
   @media (max-width: 560px) {
     body { padding: 20px 12px 60px; }
     h1 { font-size: 21px; }
-    .inputs { gap: 14px; }
+    .bar button { margin-left: 0; width: 100%; }
   }
 </style>
 </head>
@@ -155,84 +179,79 @@
 <div class="wrap">
 
   <div class="banner">
-    <strong>⚠️ 这是演示页（Day 15）</strong><br>
-    下面的行程数据是<strong>写死的假数据（mock）</strong>，不是真算出来的。
-    真产品在仓库根目录的 <code>index.html</code>，双击就能用、不用联网。
+    <strong>⚠️ 这是后端演示台（不是主产品）</strong><br>
+    从 Day 20 起，下面的数据<strong>全部来自云上真库</strong>（打开页面时实时请求）。
+    主产品在仓库根目录的 <code>index.html</code>，双击就能用、不用联网，一个字都没动。
   </div>
 
-  <h1>出行规划小助手 · 演示</h1>
-  <p class="sub">后端探路区的前端页面 —— 用来验证「能部署到公网、别人能打开、前端能连后端」。</p>
+  <h1>出行规划小助手 · 后端演示台</h1>
+  <p class="sub">三个公网接口的实时结果 —— 数据库里是什么，这里就显示什么。</p>
 
-  <!-- ① 输入摘要 -->
-  <div class="card">
-    <h2>① 你的输入（假数据）</h2>
-    <div class="inputs">
-      <div><span class="k">出发城市</span><span class="v">武汉</span></div>
-      <div><span class="k">想去的城市</span><span class="v">成都 → 重庆</span></div>
-      <div><span class="k">总天数</span><span class="v">6 天</span></div>
-      <div><span class="k">预算</span><span class="v">¥3000</span></div>
-    </div>
+  <div class="bar">
+    <span class="upd">最后更新时间：<b id="updTime">—</b></span>
+    <button id="btnRefresh" type="button">重新拉一次</button>
   </div>
 
-  <!-- ② 每日行程 -->
+  <!-- ① 后端状态 -->
   <div class="card">
-    <h2>② 每日行程（mock）</h2>
-    <table>
-      <thead>
-        <tr><th>天</th><th>在哪</th><th>当天大致安排</th><th class="num">当天花费</th></tr>
-      </thead>
-      <tbody>
-        <tr><td><span class="day-tag">第 1 天</span></td><td>在路上</td><td>武汉 → 成都，高铁约 6.5 小时</td><td class="num">¥465</td></tr>
-        <tr><td><span class="day-tag">第 2 天</span></td><td>成都</td><td>大熊猫基地 → 人民公园喝茶</td><td class="num">¥225</td></tr>
-        <tr><td><span class="day-tag">第 3 天</span></td><td>成都</td><td>宽窄巷子 → 玉林串串香</td><td class="num">¥235</td></tr>
-        <tr><td><span class="day-tag">第 4 天</span></td><td>在路上</td><td>成都 → 重庆，高铁约 1.5 小时</td><td class="num">¥226</td></tr>
-        <tr><td><span class="day-tag">第 5 天</span></td><td>重庆</td><td>磁器口 → 洪崖洞夜景</td><td class="num">¥205</td></tr>
-        <tr><td><span class="day-tag">第 6 天</span></td><td>在路上</td><td>重庆 → 武汉，高铁约 6 小时</td><td class="num">¥450</td></tr>
-      </tbody>
-    </table>
+    <h2>① 后端状态<span class="ep">GET /api/health</span></h2>
+    <div id="healthBox"><span class="badge wait"><span class="dot"></span>正在请求…</span></div>
   </div>
 
-  <!-- ③ 花费清单 -->
+  <!-- ② 城市白名单 -->
   <div class="card">
-    <h2>③ 花费清单（mock）</h2>
-    <div class="cost-row"><span class="label">城际交通</span><span>¥1141</span></div>
-    <div class="cost-row"><span class="label">市内交通</span><span>¥120</span></div>
-    <div class="cost-row"><span class="label">住宿（5 晚）</span><span>¥400</span></div>
-    <div class="cost-row"><span class="label">吃</span><span>¥335</span></div>
-    <div class="cost-row"><span class="label">门票</span><span>¥115</span></div>
-    <div class="cost-row total"><span class="label">合计</span><span>¥2111</span></div>
-    <div class="verdict">✅ 预算内，还剩 ¥889</div>
-    <p class="note">⚠️ 以上数字均为<strong>演示用的假数据</strong>，不是真实计算结果。</p>
+    <h2>② 城市白名单<span class="ep">GET /api/cities</span></h2>
+    <div class="kpi"><span class="n" id="cityCount">—</span><span class="u">座城市（数据库真实条数）</span></div>
+    <input type="text" id="citySearch" placeholder="输入城市名筛选，例如：成都" autocomplete="off" spellcheck="false">
+    <div class="grid" id="cityGrid"></div>
+    <p class="more" id="cityMore"></p>
   </div>
 
-  <!-- ④ 美食美景清单 -->
+  <!-- ③ 美食美景清单 -->
   <div class="card">
-    <h2>④ 美食美景清单（mock）</h2>
+    <h2>③ 美食美景清单<span class="ep">GET /api/places?city=…</span></h2>
+    <div class="tags" id="cityBtns"></div>
     <div class="tags">
-      <span class="tag on" data-filter="all">全部</span>
-      <span class="tag" data-filter="en">只吃</span>
-      <span class="tag" data-filter="play">只玩</span>
+      <button class="tag on" type="button" data-filter="all">全部</button>
+      <button class="tag" type="button" data-filter="en">只吃</button>
+      <button class="tag" type="button" data-filter="play">只玩</button>
     </div>
     <ul class="places" id="places"></ul>
-    <p class="empty" id="places-empty" hidden>这个筛选下没有条目。</p>
+    <p class="empty" id="places-empty" hidden></p>
   </div>
 
-  <!-- ⑤ 后端连通性（辅助） -->
-  <div class="card conn">
-    <h2>⑤ 后端连通性（这个是真的）</h2>
+  <!-- ④ 手动连通性检查台 -->
+  <div class="card">
+    <h2>④ 手动检查台<span class="ep">任意地址</span></h2>
     <p class="note" style="margin-top:0">
-      上面全是假数据，但<strong>这一块是真的</strong> —— 它真的会去请求云函数。
-      填上后端地址点一下，能返回 JSON 就说明这条链路是通的。
+      上面三块是自动拉的。这块留着给你<strong>手动试任意地址</strong>——
+      地址写错、函数没部署、跨域被拦，都能在这里试出来。
     </p>
     <input type="url" id="endpoint" placeholder="https://你的环境ID.service.tcloudbase.com/api/health"
-           value="" autocomplete="off" spellcheck="false">
-    <button id="btn-test">测试连通性</button>
+           autocomplete="off" spellcheck="false">
+    <button id="btn-test" type="button">测试连通性</button>
     <div id="out"></div>
+
+    <div class="howto">
+      <h3>怎么一眼认出「是跨域被拦」而不是「后端挂了」</h3>
+      <ol>
+        <li>按 <code>F12</code> 打开控制台，看 <strong>Console</strong> 标签：有红字
+            <code>blocked by CORS policy</code> / <code>No 'Access-Control-Allow-Origin' header</code>。</li>
+        <li>再看 <strong>Network</strong> 标签：那条请求状态是 <code>(failed)</code> 或标红，
+            <strong>拿不到响应体</strong>。</li>
+        <li>关键判据：<strong>把同一个地址直接粘到浏览器地址栏却能正常出 JSON</strong>
+            （地址栏不是跨域请求，不受 CORS 管）。</li>
+      </ol>
+      <p class="note" style="margin-top:10px">
+        <strong>两条同时出现 = 跨域问题</strong>（接口本身是好的，是浏览器不让这个页面读它）。
+        只有第 3 条也失败，才是后端真的有问题。
+      </p>
+    </div>
   </div>
 
   <p class="note">
-    <strong>这个页面跟主产品的关系</strong>：主产品（<code>index.html</code>）完全离线，双击就能用，
-    一行代码都没动。这个页面只是演示部署链路用的，不参与主产品的任何功能。
+    <strong>这个页面跟主产品的关系</strong>：主产品（<code>index.html</code>）完全离线、双击就能用，
+    一行代码都没动（硬约束 AC14）。这个页面只用来演示「前端能连上云上真库」这条链路。
     详见 <code>cloud/README.md</code>。
   </p>
 
@@ -240,85 +259,253 @@
 
 <script>
 /* ───────────────────────────────────────────────────────────
-   一、清单数据 + 筛选（这一段是【真的在跑】的交互，
-   数据本身是假的，但筛选逻辑跟主产品一致）
+   配置：接口基址
+   ⚠️ 必须是「默认域名」{环境ID}.service.tcloudbase.com
+      静态托管域名（*.tcloudbaseapp.com）不转发 /api 路由
    ─────────────────────────────────────────────────────────── */
-var PLACES = [
-  { name: '龙抄手（总店）',     type: 'en',   city: '成都', price: 20 },
-  { name: '玉林串串香',         type: 'en',   city: '成都', price: 45 },
-  { name: '蛋烘糕（街边小摊）', type: 'en',   city: '成都', price: 8  },
-  { name: '大熊猫繁育研究基地', type: 'play', city: '成都', price: 55 },
-  { name: '人民公园（鹤鸣茶社）', type: 'play', city: '成都', price: 30 },
-  { name: '宽窄巷子',           type: 'play', city: '成都', price: 0  },
-  { name: '重庆小面（街边面馆）', type: 'en',  city: '重庆', price: 12 },
-  { name: '老火锅（社区店）',     type: 'en',  city: '重庆', price: 70 },
-  { name: '酸辣粉 / 山城小汤圆', type: 'en',   city: '重庆', price: 15 },
-  { name: '洪崖洞',               type: 'play', city: '重庆', price: 0  },
-  { name: '长江索道',             type: 'play', city: '重庆', price: 30 },
-  { name: '磁器口古镇',           type: 'play', city: '重庆', price: 0  }
-];
+var API_BASE = 'https://travel-planner-d4g8o6mee9d231c64.service.tcloudbase.com';
 
-var elPlaces = document.getElementById('places');
-var elEmpty  = document.getElementById('places-empty');
+/* 首页默认展示的城市（数据库里已收录地点的） */
+var CITY_TABS = ['成都', '重庆'];
 
-function renderPlaces(filter) {
-  var list = PLACES.filter(function (p) {
-    return filter === 'all' ? true : p.type === filter;
-  });
+/* ── 小工具 ── */
+function $(id) { return document.getElementById(id); }
 
-  elPlaces.innerHTML = '';
-  list.forEach(function (p) {
-    var li = document.createElement('li');
-    var left = document.createElement('span');
-    left.textContent = p.name + '（' + p.city + '）';
-    var right = document.createElement('span');
-    right.className = 'p';
-    right.textContent = p.price === 0 ? '免费' : '约 ¥' + p.price;
-    li.appendChild(left);
-    li.appendChild(right);
-    elPlaces.appendChild(li);
-  });
+function escapeHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
 
-  /* 该档下没有条目时，明确说"没有"，而不是留一片空白 */
-  elEmpty.hidden = list.length > 0;
-  if (elEmpty.hidden) {
-    /* 有内容时，顺便在开头显示命中条数 */
-    var info = document.createElement('li');
-    info.style.color = 'var(--ink-3)';
-    info.style.fontSize = '13.5px';
-    info.textContent = '共 ' + list.length + ' 条';
-    elPlaces.insertBefore(info, elPlaces.firstChild);
+/* 本地时间，形如 2026-10-07 15:33:12 */
+function nowText() {
+  var d = new Date();
+  function p(n) { return (n < 10 ? '0' : '') + n; }
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' +
+         p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+}
+
+/* 统一的请求：把 HTTP 状态和解析后的 JSON 一起返回 */
+async function apiGet(path) {
+  var res = await fetch(API_BASE + path, { method: 'GET' });
+  var text = await res.text();
+  var json = null;
+  try { json = JSON.parse(text); } catch (e) {}
+  return { status: res.status, ok: res.ok, json: json, text: text };
+}
+
+/* ───────────────────────────────────────────────────────────
+   ① 后端状态
+   ─────────────────────────────────────────────────────────── */
+async function loadHealth() {
+  var box = $('healthBox');
+  try {
+    var r = await apiGet('/api/health');
+    if (!r.ok || !r.json || r.json.ok !== true) {
+      box.innerHTML = '<span class="badge err"><span class="dot"></span>' +
+        '后端返回异常（HTTP ' + r.status + '）</span>' +
+        '<pre>' + escapeHtml(r.text) + '</pre>';
+      return false;
+    }
+    var d = r.json;
+    box.innerHTML =
+      '<span class="badge ok"><span class="dot"></span>通了 · HTTP ' + r.status + '</span>' +
+      '<div class="kv">' +
+        '<div><span class="k">服务名</span><span class="v">' + escapeHtml(d.service) + '</span></div>' +
+        '<div><span class="k">后端说的话</span><span class="v">' + escapeHtml(d.message) + '</span></div>' +
+        '<div><span class="k">后端时间</span><span class="v">' + escapeHtml(d.time) + '</span></div>' +
+        '<div><span class="k">已运行</span><span class="v">' + escapeHtml(d.uptimeSeconds) + ' 秒</span></div>' +
+      '</div>';
+    return true;
+  } catch (err) {
+    box.innerHTML = '<span class="badge err"><span class="dot"></span>请求失败：' +
+      escapeHtml(err.message) + '</span>' +
+      '<p class="note">可能是：断网 / 地址被改错 / 跨域被拦（按 F12 看 Console 有没有 ' +
+      '<code>CORS</code> 字样）。</p>';
+    return false;
   }
 }
 
-Array.prototype.forEach.call(document.querySelectorAll('.tag'), function (t) {
+/* ───────────────────────────────────────────────────────────
+   ② 城市白名单（370 座）
+   ─────────────────────────────────────────────────────────── */
+var ALL_CITIES = [];
+var CITY_PREVIEW = 36;
+
+function renderCities(keyword) {
+  var kw = (keyword || '').trim();
+  var list = kw ? ALL_CITIES.filter(function (c) { return c.name.indexOf(kw) >= 0; })
+                : ALL_CITIES.slice(0, CITY_PREVIEW);
+
+  var grid = $('cityGrid');
+  grid.innerHTML = '';
+  list.forEach(function (c) {
+    var el = document.createElement('div');
+    el.className = 'chip';
+    el.textContent = c.name;
+    el.title = c.name + '（id=' + c.id + '）';
+    grid.appendChild(el);
+  });
+
+  var more = $('cityMore');
+  if (kw) {
+    more.textContent = '筛选「' + kw + '」命中 ' + list.length + ' 条。';
+  } else if (ALL_CITIES.length > CITY_PREVIEW) {
+    more.textContent = '共 ' + ALL_CITIES.length + ' 条，这里先显示前 ' + CITY_PREVIEW +
+                       ' 条 —— 上面输入框可以筛选。';
+  } else {
+    more.textContent = '共 ' + ALL_CITIES.length + ' 条，已全部显示。';
+  }
+}
+
+async function loadCities() {
+  try {
+    var r = await apiGet('/api/cities');
+    if (!r.ok || !r.json || r.json.ok !== true || !Array.isArray(r.json.data)) {
+      $('cityCount').textContent = '—';
+      $('cityMore').textContent = '拉取城市清单失败（HTTP ' + r.status + '）。';
+      return false;
+    }
+    ALL_CITIES = r.json.data;
+    $('cityCount').textContent = ALL_CITIES.length;
+    renderCities($('citySearch').value);
+    return true;
+  } catch (err) {
+    $('cityCount').textContent = '—';
+    $('cityMore').textContent = '拉取城市清单失败：' + err.message;
+    return false;
+  }
+}
+
+$('citySearch').addEventListener('input', function () {
+  renderCities(this.value);
+});
+
+/* ───────────────────────────────────────────────────────────
+   ③ 美食美景清单（按城市取真实数据）
+   ─────────────────────────────────────────────────────────── */
+var currentCity    = CITY_TABS[0];
+var currentFilter  = 'all';
+var currentPlaces  = [];
+
+function renderPlaces() {
+  var ul = $('places');
+  var empty = $('places-empty');
+  ul.innerHTML = '';
+
+  var list = currentPlaces.filter(function (p) {
+    return currentFilter === 'all' ? true : p.type === currentFilter;
+  });
+
+  if (!list.length) {
+    empty.hidden = false;
+    empty.textContent = currentPlaces.length
+      ? '「' + currentCity + '」在这个筛选下没有条目。'
+      : '数据库里「' + currentCity + '」还没有收录地点。';
+    return;
+  }
+  empty.hidden = true;
+
+  list.forEach(function (p) {
+    var li = document.createElement('li');
+
+    var left = document.createElement('span');
+    left.className = 'nm';
+    left.textContent = p.name;
+    if (p.note) {
+      var nt = document.createElement('span');
+      nt.className = 'nt';
+      nt.textContent = p.note;
+      left.appendChild(nt);
+    }
+
+    var right = document.createElement('span');
+    right.className = 'p';
+    var kind = p.type === 'en' ? '吃' : (p.type === 'play' ? '玩' : p.type);
+    var money = Number(p.price) === 0 ? '免费' : '约 ¥' + p.price;
+    right.textContent = kind + ' · ' + money;
+
+    li.appendChild(left);
+    li.appendChild(right);
+    ul.appendChild(li);
+  });
+}
+
+async function loadPlaces(city) {
+  currentCity = city;
+  var ul = $('places');
+  var empty = $('places-empty');
+  ul.innerHTML = '';
+  empty.hidden = false;
+  empty.textContent = '正在拉「' + city + '」的数据…';
+
+  try {
+    var r = await apiGet('/api/places?city=' + encodeURIComponent(city));
+    if (r.status === 404) {
+      currentPlaces = [];
+      empty.hidden = false;
+      empty.textContent = '数据库里没有「' + city + '」这个城市（接口返回 404）。';
+      return false;
+    }
+    if (!r.ok || !r.json || r.json.ok !== true || !Array.isArray(r.json.data)) {
+      currentPlaces = [];
+      empty.hidden = false;
+      empty.textContent = '拉取失败（HTTP ' + r.status + '）：' + (r.json && r.json.error ? r.json.error : r.text.slice(0, 120));
+      return false;
+    }
+    currentPlaces = r.json.data;
+    renderPlaces();
+    return true;
+  } catch (err) {
+    currentPlaces = [];
+    empty.hidden = false;
+    empty.textContent = '拉取失败：' + err.message;
+    return false;
+  }
+}
+
+/* 城市快捷按钮 */
+(function buildCityButtons() {
+  var wrap = $('cityBtns');
+  CITY_TABS.forEach(function (c, i) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'tag city' + (i === 0 ? ' on' : '');
+    b.textContent = c;
+    b.setAttribute('data-city', c);
+    b.addEventListener('click', function () {
+      Array.prototype.forEach.call(wrap.querySelectorAll('.tag'), function (x) { x.classList.remove('on'); });
+      b.classList.add('on');
+      loadPlaces(c);
+      stamp();
+    });
+    wrap.appendChild(b);
+  });
+})();
+
+/* 只吃 / 只玩 / 全部 */
+Array.prototype.forEach.call(document.querySelectorAll('.tag[data-filter]'), function (t) {
   t.addEventListener('click', function () {
-    Array.prototype.forEach.call(document.querySelectorAll('.tag'), function (x) {
+    Array.prototype.forEach.call(document.querySelectorAll('.tag[data-filter]'), function (x) {
       x.classList.remove('on');
     });
     t.classList.add('on');
-    renderPlaces(t.getAttribute('data-filter'));
+    currentFilter = t.getAttribute('data-filter');
+    renderPlaces();
   });
 });
 
-renderPlaces('all');
-
 /* ───────────────────────────────────────────────────────────
-   二、后端连通性检测（这一段【真的联网】）
+   ④ 手动检查台
    ─────────────────────────────────────────────────────────── */
-var elEndpoint = document.getElementById('endpoint');
-var elBtn      = document.getElementById('btn-test');
-var elOut      = document.getElementById('out');
+var elEndpoint = $('endpoint');
+var elBtn      = $('btn-test');
+var elOut      = $('out');
 var STORAGE_KEY = 'cloud-health-endpoint';
 
 try {
   var saved = localStorage.getItem(STORAGE_KEY);
   if (saved) { elEndpoint.value = saved; }
+  else { elEndpoint.value = API_BASE + '/api/health'; }
 } catch (e) { /* 隐身模式下可能不可用，忽略 */ }
-
-function escapeHtml(s) {
-  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
 
 function show(cls, text, detail) {
   var html = '<div class="status ' + cls + '">' + text + '</div>';
@@ -328,18 +515,15 @@ function show(cls, text, detail) {
 
 async function testHealth() {
   var url = elEndpoint.value.trim();
-
   if (!url) {
     show('err', '请先填后端地址',
       '地址是空的。先把云函数部署好，把公网地址粘到上面。');
     return;
   }
-
   try { localStorage.setItem(STORAGE_KEY, url); } catch (e) {}
 
   elBtn.disabled = true;
   show('run', '正在请求…', url);
-
   var started = Date.now();
 
   try {
@@ -359,7 +543,7 @@ async function testHealth() {
       '常见原因：\n' +
       '1. 地址写错（多空格、少了 /api/health）\n' +
       '2. 云函数还没部署成功\n' +
-      '3. 跨域被拦（Day 16–20 会配）\n' +
+      '3. 跨域被拦 —— 判据：地址栏能打开、这里却失败\n' +
       '4. 你现在断网了\n\n' +
       '当前测试的地址：\n' + url);
   } finally {
@@ -371,6 +555,39 @@ elBtn.addEventListener('click', testHealth);
 elEndpoint.addEventListener('keydown', function (e) {
   if (e.key === 'Enter') { testHealth(); }
 });
+
+/* ───────────────────────────────────────────────────────────
+   ⑤ 总调度：打开页面 / 点刷新，都走这里
+   ─────────────────────────────────────────────────────────── */
+function stamp() {
+  $('updTime').textContent = nowText();
+}
+
+async function refreshAll() {
+  var btn = $('btnRefresh');
+  btn.disabled = true;
+  btn.textContent = '正在拉取…';
+
+  var results = await Promise.all([
+    loadHealth(),
+    loadCities(),
+    loadPlaces(currentCity)
+  ]);
+
+  var okCount = results.filter(Boolean).length;
+  stamp();
+  var t = $('updTime');
+  t.textContent = nowText() + '（3 个接口成功 ' + okCount + ' 个）';
+  if (okCount < 3) { t.style.color = 'var(--bad)'; }
+  else { t.style.color = ''; }
+
+  btn.disabled = false;
+  btn.textContent = '重新拉一次';
+}
+
+$('btnRefresh').addEventListener('click', refreshAll);
+
+refreshAll();
 </script>
 </body>
 </html>
