@@ -224,6 +224,16 @@ app.js 里的 CN_CITIES / CITY_HIGHLIGHTS
 https://travel-planner-d4g8o6mee9d231c64-1499365786.tcloudbaseapp.com/
 ```
 
+**旧地址（Day 15 首次上线的路径，已同步为同一份新版）**：
+
+```
+https://travel-planner-d4g8o6mee9d231c64-1499365786.tcloudbaseapp.com/backend-test/
+```
+
+> ⚠️ **这两处是彼此独立的部署，别当成同一份**：根路径 `/` 走「静态网站托管 → 上传文件」；`/backend-test/` 走一个名为 `backend-test` 的**应用部署**（更新入口 = 它的详情页 → 右上角「**更新服务**」，**不是**「新建部署」）。
+> **改一处不会同步另一处** —— 以后更新演示页，两处都要动（或干脆只留一处）。
+> 2026-10-09：`/backend-test/` 已重新部署为 Day 20 新版（23953B，标题「…后端演示台（真实数据）」），与根路径一致。
+
 **本地打开**：双击 `cloud/mock/index.html`
 （页面会自动去请求云上接口 —— 所以**本地打开也要联网**才有数据。）
 

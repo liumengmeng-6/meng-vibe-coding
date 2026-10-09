@@ -138,6 +138,7 @@ cloud/
 | 后端地址 | `https://travel-planner-d4g8o6mee9d231c64.service.tcloudbase.com` |
 | 已上线接口 | `/api/health`、`/api/cities`、`/api/places?city=城市名`、`POST /api/places` |
 | 前端演示页（真实数据） | `https://travel-planner-d4g8o6mee9d231c64-1499365786.tcloudbaseapp.com/`（Day 20 起数据来自云上真库） |
+| 演示页旧路径（已同步） | `…/backend-test/` —— Day 15 首次上线的路径，2026-10-09 重新部署为同一份新版。⚠️ 与根路径属**两处独立部署，互不同步**（根 = 上传文件；`/backend-test/` = 应用部署，更新走「更新服务」） |
 | 接口说明 | 见 `cloud/api-contract.md` |
 
 > ⚠️ **到期提醒**：免费版有效期到 **2027-04-01**。到期不续费，环境会先隔离、**15 天后数据被删除**。
