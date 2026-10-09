@@ -14,6 +14,11 @@
  * 【谁在用】（Day 19 拆分新增）
  *   cities/index.js、places/index.js 里各带一份 db.js（两份内容相同）。
  *
+ * 【Day 22 加了两个方法】
+ *   update() —— 改（PATCH），remove() —— 删（DELETE）。
+ *   加它们的直接原因：PATCH / DELETE 也要走同一个网关，只是方法名不同，
+ *   没必要在 index.js 里再手写一遍 https 请求。
+ *
  * 【为什么每个函数各带一份、不共用一份？】
  *   云函数之间是**彼此独立**的：每个函数部署时只打包自己目录下的文件，
  *   别人的文件它根本拿不到。想让多个函数共用一份，要用控制台的「层」功能
@@ -27,6 +32,8 @@
  *   noKeyHint(函数名)                 —— 没配钥匙时的中文提示
  *   select(表名, 查询串)               —— 读：GET 一条查询
  *   insert(表名, 一行数据, 字段清单)    —— 写：POST 插一行，并把插进去的那行要回来
+ *   update(表名, 过滤串, 改动, 字段清单) —— 改：PATCH 改几列，并把改完后的行要回来
+ *   remove(表名, 过滤串, 字段清单)      —— 删：DELETE 删符合条件的行，并把删掉的那行要回来
  *   requestJson(路径, {method,body})  —— 最底层：直接请求网关（一般不用自己调）
  *   upstreamError(查什么, 结果)        —— 把上游非 200 的结果整理成中文
  * ─────────────────────────────────────────────────────────────
@@ -93,8 +100,13 @@ function requestJson(path, extra) {
   };
   if (bodyStr !== null) {
     headers['Content-Type'] = 'application/json';
-    // Prefer: return=representation —— PostgREST 的说法，
-    // 意思是"插完把它插进去的那一行原样还给我"，这样我们能拿到新 id 和 created_at。
+  }
+  // Prefer: return=representation —— PostgREST 的说法，意思是"动完把那一行原样还给我"：
+  //   · POST   插完 → 还我插进去的那行（拿得到新 id 和 created_at）
+  //   · PATCH  改完 → 还我改完之后的那行（前端好显示"改成了什么"）
+  //   · DELETE 删完 → 还我**被删掉的那行**（这是删除的第二道确认：看得见删了什么）
+  // ⚠️ Day 22 起不再只看"有没有 body"：DELETE 没有 body，但它同样要 return=representation。
+  if (method === 'POST' || method === 'PATCH' || method === 'DELETE') {
     headers['Prefer'] = 'return=representation';
   }
 
@@ -152,6 +164,39 @@ function insert(table, row, selectFields) {
   });
 }
 
+/**
+ * 改：把符合条件的行改掉，并让数据库把改完之后的那行还回来。（Day 22 新增）
+ * @param {string} table        表名
+ * @param {string} filters      过滤条件（**不含 ?**），如 'id=eq.63'
+ * @param {object} patch        要改的列，如 { price: 25 }
+ * @param {string} selectFields 还回来时要哪几列
+ *
+ * ⚠️ filters 必须带条件 —— 没有条件的 PATCH 会改光整张表。
+ *    调用方（index.js）负责先确认 id 合法、且这一行确实存在。
+ */
+function update(table, filters, patch, selectFields) {
+  return requestJson(REST_PREFIX + table + '?' + filters + '&select=' + selectFields, {
+    method: 'PATCH',
+    body: patch,
+  });
+}
+
+/**
+ * 删：删掉符合条件的行，并让数据库把**被删掉的那行**还回来。（Day 22 新增）
+ * @param {string} table        表名
+ * @param {string} filters      过滤条件（**不含 ?**），如 'id=eq.63'
+ * @param {string} selectFields 还回来时要哪几列
+ *
+ * ⚠️⚠️ 这是整个项目**最危险的一个方法**：PostgREST 网关有个默认行为 ——
+ *     DELETE 不带过滤条件 = **删光整张表**，而且不报错。
+ *     所以 filters 绝不能是空串；调用方必须先把 id 校验成正整数再传进来。
+ */
+function remove(table, filters, selectFields) {
+  return requestJson(REST_PREFIX + table + '?' + filters + '&select=' + selectFields, {
+    method: 'DELETE',
+  });
+}
+
 /** 上游出问题时的统一处理：把状态码和一小段原文带上，方便排查 */
 function upstreamError(what, res) {
   const snippet = String(res.raw || '').slice(0, 300);
@@ -164,6 +209,8 @@ module.exports = {
   requestJson: requestJson,
   select: select,
   insert: insert,
+  update: update,
+  remove: remove,
   upstreamError: upstreamError,
   ENV_ID: ENV_ID,
   GATEWAY_HOST: GATEWAY_HOST,

@@ -2,8 +2,10 @@
  * 云函数：places（对外地址 /api/places）
  * ─────────────────────────────────────────────────────────────
  * 它是干什么的？
- *   GET  ?city=成都 → 返回那个城市有哪些吃的、哪些玩的，以及参考价。（Day 17 上线）
- *   POST            → 新增一条「用户自填地点」，写进 places 表。（Day 18 上线）
+ *   GET    ?city=成都 → 返回那个城市有哪些吃的、哪些玩的，以及参考价。（Day 17 上线）
+ *   POST              → 新增一条「用户自填地点」，写进 places 表。（Day 18 上线）
+ *   PATCH  ?id=63     → 改一条地点（name / type / price / note）。（Day 22 上线）
+ *   DELETE ?id=63     → 删一条地点。（Day 22 上线）
  *
  * 为什么 GET 和 POST 在同一个函数里？
  *   云函数按地址路由：/api/places 这个地址只认 places 这一个函数。
@@ -35,6 +37,21 @@
  *   请求体不是 JSON → 400 ｜ 缺 city / name / type → 400
  *   type 不是 en/play → 400 ｜ price 不是非负整数 → 400
  *   note 超过 255 字 → 400（数据库列宽就是 255，先拦住省得撞库）
+ *
+ * ── Day 22：删除为什么比新增更容易出事？ ──
+ *   ✅ 新增写坏了：顶多多一行垃圾，删掉就行 —— **可逆**。
+ *   ❌ 删除写坏了：PostgREST 网关有个默认行为 ——
+ *        DELETE 请求**不带过滤条件时，会删光整张表**，而且不报错、没提示。
+ *      一行 `db.remove('places', '', ...)` 就能让 15 条数据归零。
+ *   所以本文件对"改"和"删"都加了**三道确认**，一道不少：
+ *     第 1 道（拦在前面）：必须带 ?id=，且必须是正整数 —— 缺了直接 400，
+ *         **绝不允许一个没有条件的 PATCH / DELETE 发到数据库**。
+ *     第 2 道（先查后动）：先按 id 查一次，查不到 → 404，**根本不发删除**。
+ *         （顺带拿到这一行的完整快照，给第 3 道用）
+ *     第 3 道（看得见）：删完把**被删掉的那一行**原样返回（PATCH 则返回改完后的行），
+ *         让人一眼看到"到底动了哪条、动成了什么样"。
+ *   ⚠️ 还有一条纪律：PATCH 只允许改 name / type / price / note 四个字段。
+ *      想改 city 不行（换城市 = 删掉重加）—— 少一个可动的地方，就少一处能出事的地方。
  * ─────────────────────────────────────────────────────────────
  */
 
@@ -51,11 +68,11 @@ const PLACE_FIELDS = 'id,city_id,name,type,price,note,created_at';
 /** 一次最多要多少行（理由见 cities 那个函数的注释） */
 const LIMIT_ROWS = 2000;
 
-/** 跨域头（Day 18：加了 POST —— 前端要用 POST 写数据了） */
+/** 跨域头（Day 18：加了 POST；Day 22：再加 PATCH、DELETE —— 前端要能改和删） */
 const CORS_HEADERS = {
   'Content-Type': 'application/json; charset=utf-8',
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+  'Access-Control-Allow-Methods': 'GET,POST,PATCH,DELETE,OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
@@ -183,6 +200,126 @@ function validatePlaceInput(input) {
   }
 
   return { valid: true, cleaned: { city: city, name: name, type: type, price: price, note: note } };
+}
+
+/* ============================================================
+   二之二、业务：PATCH / DELETE 的校验（Day 22）
+   ============================================================ */
+
+/** PATCH 允许改的字段白名单。city 故意不在里面 —— 换城市请删掉重加。 */
+const PATCHABLE_FIELDS = ['name', 'type', 'price', 'note'];
+
+/** 明确不许改的字段（发过来就报错，而不是"默默忽略"——默默忽略最容易让人以为改成功了） */
+const FORBIDDEN_FIELDS = ['id', 'city', 'city_id', 'created_at'];
+
+/**
+ * 校验地址里的 ?id=63。
+ * @returns {{ok:true,id:number} | {ok:false,message:string}}
+ *
+ * ⚠️ 这是"三道确认"的第 1 道，也是最重要的一道：
+ *    没有它，一个不带条件的 DELETE 就能清空整张表。
+ */
+function parseId(raw) {
+  if (raw === undefined || raw === null || String(raw).trim() === '') {
+    return {
+      ok: false,
+      message: '必须带 id，例如 ?id=63（想删/改哪一条）。' +
+        '这里不许多余的余地：没有 id 的删除会把整张表清空，所以函数直接拒绝，绝不转发给数据库。',
+    };
+  }
+  const s = String(raw).trim();
+  const n = Number(s);
+  if (!/^\d+$/.test(s) || !Number.isInteger(n) || n <= 0) {
+    return { ok: false, message: 'id 必须是正整数（收到的是 "' + raw + '"）。' };
+  }
+  return { ok: true, id: n };
+}
+
+/**
+ * 校验 PATCH 进来的"要改的内容"。
+ * @returns {{valid:true, patch:{...}} | {valid:false, http:number, message:string}}
+ *
+ * 规矩：
+ *   · 只认 name / type / price / note 四个字段，多一个都报错（包括想改 city、id）
+ *   · 一个字段都没给 → 400（空请求等于什么都没说）
+ *   · 给了的字段，规矩跟 POST 时一模一样（type 只能 en/play、price 非负整数、note ≤ 255）
+ *   · name 不许改成空串（那是"删名字"，用 DELETE 才是正事）
+ */
+function validatePlacePatch(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return { valid: false, http: 400, message: '请求体要是 JSON 对象，例如 {"price":25}。' };
+  }
+
+  const keys = Object.keys(input);
+  if (keys.length === 0) {
+    return {
+      valid: false, http: 400,
+      message: '没有要改的字段。请按 {"price":25} 这样的格式，至少填一项：name / type / price / note。',
+    };
+  }
+
+  const forbidden = keys.filter(function (k) { return FORBIDDEN_FIELDS.indexOf(k) >= 0; });
+  if (forbidden.length > 0) {
+    return {
+      valid: false, http: 400,
+      message: '不支持修改字段 ' + forbidden.join('、') + '。能改的只有：name（名字）、type（类别）、price（价格）、note（备注）。想换城市请删掉重加。',
+    };
+  }
+
+  const unknown = keys.filter(function (k) { return PATCHABLE_FIELDS.indexOf(k) < 0; });
+  if (unknown.length > 0) {
+    return {
+      valid: false, http: 400,
+      message: '不认识的字段：' + unknown.join('、') + '。能改的只有：name / type / price / note。',
+    };
+  }
+
+  const patch = {};
+
+  // name：可以改，但不能改成空
+  if (keys.indexOf('name') >= 0) {
+    const name = (input.name === undefined || input.name === null) ? '' : String(input.name).trim();
+    if (!name) {
+      return { valid: false, http: 400, message: 'name 不能改成空。要么给个新名字，要么别带这个字段（想删掉这一条请用 DELETE）。' };
+    }
+    if (name.length > 64) {
+      return { valid: false, http: 400, message: 'name 太长了（' + name.length + ' 个字，上限 64）。数据库列宽就是 64。' };
+    }
+    patch.name = name;
+  }
+
+  // type：可以改，但只能是 en / play
+  if (keys.indexOf('type') >= 0) {
+    const type = (input.type === undefined || input.type === null) ? '' : String(input.type).trim();
+    if (type !== 'en' && type !== 'play') {
+      return { valid: false, http: 400, message: 'type 的值不对：收到的是 "' + type + '"。只能填 "en"（吃）或 "play"（玩）。' };
+    }
+    patch.type = type;
+  }
+
+  // price：可以改，但必须是非负整数
+  if (keys.indexOf('price') >= 0) {
+    const n = Number(input.price);
+    if (!Number.isInteger(n) || n < 0) {
+      return { valid: false, http: 400, message: 'price 必须是 0 或正整数（元）。收到的是 "' + input.price + '"。' };
+    }
+    patch.price = n;
+  }
+
+  // note：可以改，但列宽 255
+  if (keys.indexOf('note') >= 0) {
+    if (input.note === undefined || input.note === null) {
+      patch.note = '';
+    } else {
+      const note = String(input.note).trim();
+      if (note.length > 255) {
+        return { valid: false, http: 400, message: 'note 太长了（' + note.length + ' 个字，上限 255）。请缩短后重发。' };
+      }
+      patch.note = note;
+    }
+  }
+
+  return { valid: true, patch: patch };
 }
 
 /* ============================================================
@@ -373,6 +510,163 @@ async function addPlace(input) {
 }
 
 /* ============================================================
+   四之二、业务：按 id 找一条（PATCH / DELETE 共用的"第 2 道确认"）
+   ============================================================ */
+
+/**
+ * 按 id 查一条，拿它的完整快照。
+ * @returns {{row:object} | {error:{http:number,body:object}}}
+ *   查到了 → { row }
+ *   没查到 → { error: {http:404, ...} }
+ *   出错   → { error: {http:502, ...} }
+ */
+async function findPlaceById(id) {
+  const qs = 'select=' + PLACE_FIELDS + '&id=eq.' + id + '&limit=1';
+
+  let res;
+  try {
+    res = await db.select(TABLE_PLACES, qs);
+  } catch (e) {
+    return { error: { http: 502, body: fail('连不上数据库网关：' + e.message) } };
+  }
+
+  if (res.status !== 200) return { error: { http: 502, body: fail(db.upstreamError('地点', res)) } };
+  if (!Array.isArray(res.json)) {
+    return { error: { http: 502, body: fail('按 id 查时返回的不是数组。原文（截断）：' + String(res.raw || '').slice(0, 300)) } };
+  }
+  if (res.json.length === 0) {
+    return { error: { http: 404, body: fail('没有找到 id=' + id + ' 的地点，什么都没做。可以先用 GET /api/places?city=城市名 看看现有的 id。') } };
+  }
+  return { row: res.json[0] };
+}
+
+/* ============================================================
+   四之三、业务：PATCH 的改逻辑（Day 22）
+   ============================================================ */
+
+/**
+ * 改一条地点。流程就是那"三道确认"：
+ *   ① parseId —— 必须带合法 id
+ *   ② validatePlacePatch —— 只改允许的四个字段
+ *   ③ findPlaceById —— 这条得真的存在（顺带拿到改之前的快照）
+ *   ④ 若改名字：查同城里有没有别人叫这个名字（排除自己）→ 409
+ *   ⑤ db.update → 返回改完后的那一行
+ */
+async function updatePlace(idRaw, input) {
+  // ① 第 1 道确认：id
+  const idCheck = parseId(idRaw);
+  if (!idCheck.ok) return { http: 400, body: fail(idCheck.message) };
+  const id = idCheck.id;
+
+  // ② 校验要改的内容
+  const v = validatePlacePatch(input);
+  if (!v.valid) return { http: v.http, body: fail(v.message) };
+
+  if (!db.hasKey()) return { http: 500, body: fail(db.noKeyHint('places')) };
+
+  // ③ 第 2 道确认：先查这条在不在
+  const found = await findPlaceById(id);
+  if (found.error) return found.error;
+  const before = found.row;
+
+  // ④ 改名字时查同城重名（排除自己）—— 数据库的 UNIQUE(city_id,name) 是兜底
+  if (v.patch.name && v.patch.name !== before.name) {
+    const dupQs =
+      'select=' + PLACE_FIELDS +
+      '&city_id=eq.' + before.city_id +
+      '&name=eq.' + encodeURIComponent(v.patch.name) +
+      '&id=neq.' + id +
+      '&limit=1';
+
+    let dupRes;
+    try {
+      dupRes = await db.select(TABLE_PLACES, dupQs);
+    } catch (e) {
+      return { http: 502, body: fail('查重时连不上数据库网关：' + e.message) };
+    }
+    if (dupRes.status !== 200) return { http: 502, body: fail(db.upstreamError('重名地点', dupRes)) };
+    if (Array.isArray(dupRes.json) && dupRes.json.length > 0) {
+      return {
+        http: 409,
+        body: fail('这座城市里已经有一条叫「' + v.patch.name + '」的了（第 ' + dupRes.json[0].id + ' 条），改名会撞车，没改。'),
+      };
+    }
+  }
+
+  // ⑤ 改
+  let res;
+  try {
+    res = await db.update(TABLE_PLACES, 'id=eq.' + id, v.patch, PLACE_FIELDS);
+  } catch (e) {
+    return { http: 502, body: fail('修改时连不上数据库网关：' + e.message) };
+  }
+
+  if (res.status !== 200 && res.status !== 204) {
+    const snippet = String(res.raw || '').slice(0, 300);
+    if (res.status === 409 || String(snippet).indexOf('uk_places_city_name') >= 0) {
+      return { http: 409, body: fail('改名撞车了：这座城市里已经有同名的地点（数据库唯一约束拦下的）。') };
+    }
+    return { http: 502, body: fail('修改时数据库网关返回了 ' + res.status + '。原文（截断）：' + snippet) };
+  }
+
+  // 第 3 道确认：把"改完之后的那一行"还回去（个别网关回空体时，自己拼一份）
+  let after = null;
+  if (Array.isArray(res.json) && res.json.length > 0) {
+    after = res.json[0];
+  } else {
+    after = Object.assign({}, before, v.patch);
+  }
+
+  return { http: 200, body: ok(after) };
+}
+
+/* ============================================================
+   四之四、业务：DELETE 的删逻辑（Day 22）
+   ============================================================ */
+
+/**
+ * 删一条地点。这是全项目最需要小心的一条路，所以三道确认一道不少：
+ *   ① parseId —— 必须带合法 id（**这道确认拦住了"删光整张表"**）
+ *   ② findPlaceById —— 这条得真的存在；不存在 → 404，且**根本不发删除请求**
+ *   ③ db.remove 带 'id=eq.N' → 返回**被删掉的那一行**（你能看到删了什么）
+ *
+ * 为什么不像 POST 那样"查不到就直接插"？
+ *   删和插的心态完全相反：插是"尽量成功"，删是"宁可失败也别删错"。
+ *   所以这里 404 就是终点 —— 不会去猜、不会降级、不会"顺便删点别的"。
+ */
+async function deletePlace(idRaw) {
+  // ① 第 1 道确认：id
+  const idCheck = parseId(idRaw);
+  if (!idCheck.ok) return { http: 400, body: fail(idCheck.message) };
+  const id = idCheck.id;
+
+  if (!db.hasKey()) return { http: 500, body: fail(db.noKeyHint('places')) };
+
+  // ② 第 2 道确认：先查这条在不在
+  const found = await findPlaceById(id);
+  if (found.error) return found.error;
+
+  // ③ 真删。过滤条件写死成这一条的 id —— 绝不存在"删到别人"的可能
+  let res;
+  try {
+    res = await db.remove(TABLE_PLACES, 'id=eq.' + id, PLACE_FIELDS);
+  } catch (e) {
+    return { http: 502, body: fail('删除时连不上数据库网关：' + e.message) };
+  }
+
+  if (res.status !== 200 && res.status !== 204) {
+    return {
+      http: 502,
+      body: fail('删除时数据库网关返回了 ' + res.status + '。原文（截断）：' + String(res.raw || '').slice(0, 300)),
+    };
+  }
+
+  // 第 3 道确认：把被删掉的那一行原样还回去
+  const deleted = (Array.isArray(res.json) && res.json.length > 0) ? res.json[0] : found.row;
+  return { http: 200, body: ok(deleted) };
+}
+
+/* ============================================================
    五、入口：按 HTTP 方法分流
    ============================================================ */
 
@@ -400,8 +694,39 @@ exports.main = async (event, context) => {
     };
   }
 
+  // ---- PATCH：改一条（Day 22）----
+  // 要改什么在请求体里，改哪一条在地址的 ?id= 里
+  if (isHttpRequest && method === 'PATCH') {
+    const input = parseBody(event);
+    if (!input) {
+      const body = fail('请求体不是能认的 JSON 对象。请用 Content-Type: application/json，' +
+        '并按 {"price":25} 这样的格式发（能改的字段：name / type / price / note）。');
+      return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify(body) };
+    }
+    const query = getQuery(event);
+    const result = await updatePlace(query.id, input);
+    return {
+      statusCode: result.http,
+      headers: CORS_HEADERS,
+      body: JSON.stringify(result.body),
+    };
+  }
+
+  // ---- DELETE：删一条（Day 22）----
+  // ⚠️ 注意这里**没有请求体**：删哪一条完全靠 ?id= 决定。
+  //    正因如此，parseId 那道确认是生死线（见 deletePlace 的注释）
+  if (isHttpRequest && method === 'DELETE') {
+    const query = getQuery(event);
+    const result = await deletePlace(query.id);
+    return {
+      statusCode: result.http,
+      headers: CORS_HEADERS,
+      body: JSON.stringify(result.body),
+    };
+  }
+
   if (isHttpRequest && method !== 'GET') {
-    const body = fail('这个接口只支持 GET（读）和 POST（写）。收到的是 ' + method);
+    const body = fail('这个接口支持 GET（读）、POST（新增）、PATCH（改一条）、DELETE（删一条）。收到的是 ' + method);
     return { statusCode: 405, headers: CORS_HEADERS, body: JSON.stringify(body) };
   }
 
@@ -425,3 +750,5 @@ exports.main = async (event, context) => {
 
 /** 内部测试用：把纯校验函数露出来，本地单测不需要连数据库 */
 exports._validatePlaceInput = validatePlaceInput;
+exports._validatePlacePatch = validatePlacePatch;
+exports._parseId = parseId;
