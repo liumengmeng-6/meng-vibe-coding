@@ -24,6 +24,12 @@
  *   失败：{ ok: false, data: null,  error: "人能看懂的中文说明" }
  *   ⚠️ 三个字段永远都在。成功时 error 是 null，失败时 data 是 null ——
  *      前端不用先判断"这个字段存不存在"，写法简单一半。
+ *
+ * ── Day 23：三类错误提示统一 ──
+ *   ① 输入/参数类（400/404/409）② 服务未配置（500）③ 上游/网络类（502）——
+ *   三类**都只返回中文**。第 ③ 类以前会把网关原文（英文报错、内部主机名、
+ *   JSON 片段）直接甩给用户，现在改成：原文写进函数日志，返回体只给一句中文。
+ *   ⚠️ 最外层还加了一层 try/catch 兜底：没预料的异常也返回中文 500。
  * ─────────────────────────────────────────────────────────────
  */
 
@@ -128,7 +134,7 @@ async function readCities() {
   try {
     res = await db.select(TABLE, qs);
   } catch (e) {
-    return { http: 502, body: fail('连不上数据库网关：' + e.message) };
+    return { http: 502, body: fail(db.networkError('城市', e)) };
   }
 
   if (res.status !== 200) {
@@ -137,10 +143,7 @@ async function readCities() {
 
   // 正常应该拿到一个数组。不是数组说明网关给的是别的东西（比如错误对象）
   if (!Array.isArray(res.json)) {
-    return {
-      http: 502,
-      body: fail('返回的不是数组（预期是城市列表）。原文（截断）：' + String(res.raw || '').slice(0, 300)),
-    };
+    return { http: 502, body: fail(db.badShapeError('城市列表', res)) };
   }
 
   return { http: 200, body: ok(res.json) };
@@ -159,7 +162,7 @@ async function readCities() {
  *                内容类型是 JSON、也不知道状态码
  *   判断依据：HTTP 访问时 event 里会带 httpMethod
  */
-exports.main = async (event, context) => {
+async function handle(event, context) {
   const isHttpRequest = !!(event && event.httpMethod);
   const method = (event && event.httpMethod) || 'GET';
 
@@ -186,4 +189,27 @@ exports.main = async (event, context) => {
 
   // SDK 调用：直接返回对象
   return result.body;
+}
+
+/**
+ * 云函数入口。
+ *
+ * ── Day 23：最外层兜底的一层 try/catch（第 3 类错误）──
+ *   任何**没被预料**的异常（例如地址里的百分号写错，decodeURIComponent 会抛
+ *   URIError），一旦抛出，平台会回它自己的英文错误页/堆栈 —— 又是一句裸报错。
+ *   这里兜住：转成一句中文 + 500，原始堆栈写进函数日志。
+ *   ⚠️ 不是"异常处理框架"，就一个 try/catch。
+ */
+exports.main = async (event, context) => {
+  try {
+    return await handle(event, context);
+  } catch (e) {
+    console.error('[cities] 未预料的异常 | ' + ((e && e.stack) || e));
+    const body = fail('后端内部出错了（不是你的请求问题），请稍后再试。');
+    const isHttpRequest = !!(event && event.httpMethod);
+    if (isHttpRequest) {
+      return { statusCode: 500, headers: CORS_HEADERS, body: JSON.stringify(body) };
+    }
+    return body;
+  }
 };

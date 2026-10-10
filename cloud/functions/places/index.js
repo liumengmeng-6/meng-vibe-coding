@@ -52,6 +52,16 @@
  *         让人一眼看到"到底动了哪条、动成了什么样"。
  *   ⚠️ 还有一条纪律：PATCH 只允许改 name / type / price / note 四个字段。
  *      想改 city 不行（换城市 = 删掉重加）—— 少一个可动的地方，就少一处能出事的地方。
+ *
+ * ── Day 23：三类错误提示统一 ──
+ *   全项目错误分三类，**每一类都返回中文**：
+ *     ① 输入/参数类（400 / 404 / 409）—— 用户能自己改，本来就已是中文。
+ *     ② 服务未配置（500 没配钥匙）—— 见 db.noKeyHint()，本就是中文。
+ *     ③ 上游/网络类（502）—— **以前会把网关原文直接甩给用户**（英文报错、内部
+ *        主机名、JSON 片段），现在改成：原文写进函数日志，返回体只给一句中文
+ *        （见 db.networkError / db.upstreamError / db.badShapeError）。
+ *   ⚠️ 另加最外层 try/catch 兜底：任何没预料的异常也返回中文 500，
+ *      不把平台的英文错误页/堆栈吐给用户。
  * ─────────────────────────────────────────────────────────────
  */
 
@@ -351,15 +361,12 @@ async function readPlaces(cityName) {
   try {
     cityRes = await db.select(TABLE_CITIES, cityQs);
   } catch (e) {
-    return { http: 502, body: fail('连不上数据库网关：' + e.message) };
+    return { http: 502, body: fail(db.networkError('城市', e)) };
   }
 
   if (cityRes.status !== 200) return { http: 502, body: fail(db.upstreamError('城市', cityRes)) };
   if (!Array.isArray(cityRes.json)) {
-    return {
-      http: 502,
-      body: fail('查城市时返回的不是数组。原文（截断）：' + String(cityRes.raw || '').slice(0, 300)),
-    };
+    return { http: 502, body: fail(db.badShapeError('城市列表', cityRes)) };
   }
   if (cityRes.json.length === 0) {
     return {
@@ -380,15 +387,12 @@ async function readPlaces(cityName) {
   try {
     placeRes = await db.select(TABLE_PLACES, placeQs);
   } catch (e) {
-    return { http: 502, body: fail('连不上数据库网关：' + e.message) };
+    return { http: 502, body: fail(db.networkError('地点', e)) };
   }
 
   if (placeRes.status !== 200) return { http: 502, body: fail(db.upstreamError('地点', placeRes)) };
   if (!Array.isArray(placeRes.json)) {
-    return {
-      http: 502,
-      body: fail('查地点时返回的不是数组。原文（截断）：' + String(placeRes.raw || '').slice(0, 300)),
-    };
+    return { http: 502, body: fail(db.badShapeError('地点列表', placeRes)) };
   }
 
   return { http: 200, body: ok(placeRes.json) };
@@ -425,15 +429,12 @@ async function addPlace(input) {
   try {
     cityRes = await db.select(TABLE_CITIES, cityQs);
   } catch (e) {
-    return { http: 502, body: fail('连不上数据库网关：' + e.message) };
+    return { http: 502, body: fail(db.networkError('城市', e)) };
   }
 
   if (cityRes.status !== 200) return { http: 502, body: fail(db.upstreamError('城市', cityRes)) };
   if (!Array.isArray(cityRes.json)) {
-    return {
-      http: 502,
-      body: fail('查城市时返回的不是数组。原文（截断）：' + String(cityRes.raw || '').slice(0, 300)),
-    };
+    return { http: 502, body: fail(db.badShapeError('城市列表', cityRes)) };
   }
   if (cityRes.json.length === 0) {
     return {
@@ -455,7 +456,7 @@ async function addPlace(input) {
   try {
     dupRes = await db.select(TABLE_PLACES, dupQs);
   } catch (e) {
-    return { http: 502, body: fail('查重时连不上数据库网关：' + e.message) };
+    return { http: 502, body: fail(db.networkError('重名查重', e)) };
   }
 
   if (dupRes.status !== 200) return { http: 502, body: fail(db.upstreamError('重名地点', dupRes)) };
@@ -479,7 +480,7 @@ async function addPlace(input) {
       note: c.note,
     }, PLACE_FIELDS);
   } catch (e) {
-    return { http: 502, body: fail('写入时连不上数据库网关：' + e.message) };
+    return { http: 502, body: fail(db.networkError('写入地点', e)) };
   }
 
   if (insertRes.status !== 200 && insertRes.status !== 201) {
@@ -493,7 +494,7 @@ async function addPlace(input) {
     }
     return {
       http: 502,
-      body: fail('写入时数据库网关返回了 ' + insertRes.status + '。原文（截断）：' + snippet),
+      body: fail(db.upstreamError('写入地点', insertRes)),
     };
   }
 
@@ -527,12 +528,12 @@ async function findPlaceById(id) {
   try {
     res = await db.select(TABLE_PLACES, qs);
   } catch (e) {
-    return { error: { http: 502, body: fail('连不上数据库网关：' + e.message) } };
+    return { error: { http: 502, body: fail(db.networkError('按 id 查地点', e)) } };
   }
 
   if (res.status !== 200) return { error: { http: 502, body: fail(db.upstreamError('地点', res)) } };
   if (!Array.isArray(res.json)) {
-    return { error: { http: 502, body: fail('按 id 查时返回的不是数组。原文（截断）：' + String(res.raw || '').slice(0, 300)) } };
+    return { error: { http: 502, body: fail(db.badShapeError('按 id 查的地点', res)) } };
   }
   if (res.json.length === 0) {
     return { error: { http: 404, body: fail('没有找到 id=' + id + ' 的地点，什么都没做。可以先用 GET /api/places?city=城市名 看看现有的 id。') } };
@@ -582,7 +583,7 @@ async function updatePlace(idRaw, input) {
     try {
       dupRes = await db.select(TABLE_PLACES, dupQs);
     } catch (e) {
-      return { http: 502, body: fail('查重时连不上数据库网关：' + e.message) };
+      return { http: 502, body: fail(db.networkError('重名查重', e)) };
     }
     if (dupRes.status !== 200) return { http: 502, body: fail(db.upstreamError('重名地点', dupRes)) };
     if (Array.isArray(dupRes.json) && dupRes.json.length > 0) {
@@ -598,7 +599,7 @@ async function updatePlace(idRaw, input) {
   try {
     res = await db.update(TABLE_PLACES, 'id=eq.' + id, v.patch, PLACE_FIELDS);
   } catch (e) {
-    return { http: 502, body: fail('修改时连不上数据库网关：' + e.message) };
+    return { http: 502, body: fail(db.networkError('修改地点', e)) };
   }
 
   if (res.status !== 200 && res.status !== 204) {
@@ -606,7 +607,7 @@ async function updatePlace(idRaw, input) {
     if (res.status === 409 || String(snippet).indexOf('uk_places_city_name') >= 0) {
       return { http: 409, body: fail('改名撞车了：这座城市里已经有同名的地点（数据库唯一约束拦下的）。') };
     }
-    return { http: 502, body: fail('修改时数据库网关返回了 ' + res.status + '。原文（截断）：' + snippet) };
+    return { http: 502, body: fail(db.upstreamError('修改地点', res)) };
   }
 
   // 第 3 道确认：把"改完之后的那一行"还回去（个别网关回空体时，自己拼一份）
@@ -651,14 +652,11 @@ async function deletePlace(idRaw) {
   try {
     res = await db.remove(TABLE_PLACES, 'id=eq.' + id, PLACE_FIELDS);
   } catch (e) {
-    return { http: 502, body: fail('删除时连不上数据库网关：' + e.message) };
+    return { http: 502, body: fail(db.networkError('删除地点', e)) };
   }
 
   if (res.status !== 200 && res.status !== 204) {
-    return {
-      http: 502,
-      body: fail('删除时数据库网关返回了 ' + res.status + '。原文（截断）：' + String(res.raw || '').slice(0, 300)),
-    };
+    return { http: 502, body: fail(db.upstreamError('删除地点', res)) };
   }
 
   // 第 3 道确认：把被删掉的那一行原样还回去
@@ -670,7 +668,7 @@ async function deletePlace(idRaw) {
    五、入口：按 HTTP 方法分流
    ============================================================ */
 
-exports.main = async (event, context) => {
+async function handle(event, context) {
   const isHttpRequest = !!(event && event.httpMethod);
   const method = (event && event.httpMethod) || 'GET';
 
@@ -746,6 +744,31 @@ exports.main = async (event, context) => {
   }
 
   return result.body;
+}
+
+/**
+ * 云函数入口。
+ *
+ * ── Day 23：为什么最外面还要再包一层 try/catch？（第 3 类错误的兜底）──
+ *   前面每个数据库调用都各自 try/catch 了，但**仍有没被预料的抛出点**
+ *   （例如地址里的百分号写错时，decodeURIComponent 会抛 URIError）。
+ *   函数一旦抛异常，平台会回它自己的**英文错误页 / 堆栈** —— 那又是一句
+ *   "裸报错"，还带着内部路径。所以最外面兜一层：转成一句中文 + 500，
+ *   原始堆栈写进函数日志。
+ *   ⚠️ 这不是"异常处理框架"，就一个 try/catch，够用就行。
+ */
+exports.main = async (event, context) => {
+  try {
+    return await handle(event, context);
+  } catch (e) {
+    console.error('[places] 未预料的异常 | ' + ((e && e.stack) || e));
+    const body = fail('后端内部出错了（不是你的请求问题），请稍后再试。');
+    const isHttpRequest = !!(event && event.httpMethod);
+    if (isHttpRequest) {
+      return { statusCode: 500, headers: CORS_HEADERS, body: JSON.stringify(body) };
+    }
+    return body;
+  }
 };
 
 /** 内部测试用：把纯校验函数露出来，本地单测不需要连数据库 */

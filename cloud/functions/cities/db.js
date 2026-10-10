@@ -19,6 +19,15 @@
  *   加它们的直接原因：PATCH / DELETE 也要走同一个网关，只是方法名不同，
  *   没必要在 index.js 里再手写一遍 https 请求。
  *
+ * 【Day 23 加了什么 —— 三类错误提示统一】
+ *   以前网关出问题时，会把**技术原文**直接塞进给用户看的 error 里，例如
+ *     「连不上数据库网关：getaddrinfo ENOTFOUND …」
+ *     「…返回了 502。原文（截断）：{"code":"PGRST…"}」
+ *   —— 用户看不懂，还顺带把内部主机名、返回结构暴露了出去。
+ *   现在改成：**对外只回一句中文；原始报错用 console.error 写进函数日志**
+ *   （控制台「云函数 → 日志」里能查）—— 排查线索不丢，用户面前干净。
+ *   为此加了 networkError() / badShapeError()，并重写了 upstreamError()。
+ *
  * 【为什么每个函数各带一份、不共用一份？】
  *   云函数之间是**彼此独立**的：每个函数部署时只打包自己目录下的文件，
  *   别人的文件它根本拿不到。想让多个函数共用一份，要用控制台的「层」功能
@@ -35,7 +44,9 @@
  *   update(表名, 过滤串, 改动, 字段清单) —— 改：PATCH 改几列，并把改完后的行要回来
  *   remove(表名, 过滤串, 字段清单)      —— 删：DELETE 删符合条件的行，并把删掉的那行要回来
  *   requestJson(路径, {method,body})  —— 最底层：直接请求网关（一般不用自己调）
- *   upstreamError(查什么, 结果)        —— 把上游非 200 的结果整理成中文
+ *   networkError(做什么, 错误)         —— 连不上/超时 → 一句中文（原文进日志）
+ *   upstreamError(查什么, 结果)        —— 网关非 200 → 一句中文（原文进日志）
+ *   badShapeError(做什么, 结果)        —— 网关回的形状不对 → 一句中文（原文进日志）
  * ─────────────────────────────────────────────────────────────
  */
 
@@ -197,10 +208,64 @@ function remove(table, filters, selectFields) {
   });
 }
 
-/** 上游出问题时的统一处理：把状态码和一小段原文带上，方便排查 */
+/* ============================================================
+   Day 23：三类错误提示统一 —— 「技术原文写日志，返回体只给中文」
+   ------------------------------------------------------------
+   为什么这么做？
+     · 返回体是给**用户**看的 —— 里面出现英文报错、主机名、JSON 片段，
+       用户看不懂，还把内部结构泄露了出去。
+     · 但原始报错**不能丢** —— 它是排查故障的唯一线索。
+   所以：原文用 console.error 写进**函数日志**（控制台 → 云函数 → 日志 可见），
+        返回体只留一句中文。
+   ============================================================ */
+
+/**
+ * 把原始技术细节写进函数日志（**不进返回体**）。
+ * 日志入口：CloudBase 控制台 → 云函数 → 选中函数 → 「日志」。
+ */
+function logRaw(tag, detail) {
+  try {
+    console.error('[db] ' + tag + ' | ' + String(detail).slice(0, 800));
+  } catch (e) {
+    // 记日志本身失败也不该影响主流程，静默即可
+  }
+}
+
+/**
+ * 第 3 类错误（上游/网络）：连不上网关、或超时。
+ * @param {string} what 正在做什么（如「城市」），让提示更具体
+ * @param {Error|*} err 原始错误（**只用来记日志**，不进返回体）
+ * @returns {string} 一句中文
+ */
+function networkError(what, err) {
+  const raw = (err && err.message) ? err.message : String(err);
+  logRaw('连不上网关(' + what + ')', raw);
+  if (/超时|timeout/i.test(raw)) {
+    return '连接数据库超时（' + what + '），请稍后再试。';
+  }
+  return '连不上数据库（' + what + '），请稍后再试。';
+}
+
+/**
+ * 第 3 类错误（上游/网络）：网关回了非 200。
+ * @param {string} what 正在查什么
+ * @param {{status:number, raw:string}} res 网关原始响应（**只用来记日志**）
+ */
 function upstreamError(what, res) {
-  const snippet = String(res.raw || '').slice(0, 300);
-  return '查' + what + '时数据库网关返回了 ' + res.status + '。原文（截断）：' + snippet;
+  logRaw('网关异常(' + what + ')',
+    'status=' + res.status + ' raw=' + String(res.raw || '').slice(0, 800));
+  return '数据库暂时不可用（' + what + '，状态 ' + res.status + '），请稍后再试。';
+}
+
+/**
+ * 第 3 类错误（上游/网络）：网关 200 了，但回的东西形状不对（比如不是数组）。
+ * @param {string} what 正在查什么
+ * @param {{status:number, raw:string}} res 网关原始响应（**只用来记日志**）
+ */
+function badShapeError(what, res) {
+  logRaw('返回形状异常(' + what + ')',
+    'status=' + res.status + ' raw=' + String(res.raw || '').slice(0, 800));
+  return '数据库返回的内容看不懂（' + what + '），请稍后再试。';
 }
 
 module.exports = {
@@ -211,7 +276,9 @@ module.exports = {
   insert: insert,
   update: update,
   remove: remove,
+  networkError: networkError,
   upstreamError: upstreamError,
+  badShapeError: badShapeError,
   ENV_ID: ENV_ID,
   GATEWAY_HOST: GATEWAY_HOST,
   REST_PREFIX: REST_PREFIX,
