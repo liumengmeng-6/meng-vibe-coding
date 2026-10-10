@@ -2988,8 +2988,21 @@ function addCity() {
     return;
   }
 
-  if (selectedCities.indexOf(name) >= 0) {
-    setCityHint('「' + name + '」已经在列表里了');
+  /* ⚠️ 查重必须按【正式名】比（Day 24 修的真 Bug）。
+     原来写的是 selectedCities.indexOf(name) —— 直接拿"用户输入的原文"去比。
+     可列表里存的也是原文（用户打"魔都"，列表里就是"魔都"），而
+     "魔都 → 上海"的转换要到 readInput() 里才做。于是先输"魔都"、再输"上海"，
+     两个字符串不相等 → 查重挡不住 → 同一座城进列表两次，
+     生成方案时被当成"两次到访"，白占好几天。
+     改法：两边都过一遍 normalizeCityName() 再比，口径就对齐了。
+     只动"怎么比"—— 列表里存什么、chip 显示什么，全都不变。 */
+  var canon = normalizeCityName(name);
+  var duplicated = false;
+  for (var i = 0; i < selectedCities.length; i++) {
+    if (normalizeCityName(selectedCities[i]) === canon) { duplicated = true; break; }
+  }
+  if (duplicated) {
+    setCityHint('「' + canon + '」已经在列表里了');
     input.value = '';
     input.focus();
     return;   // 已经加过了，不重复加
