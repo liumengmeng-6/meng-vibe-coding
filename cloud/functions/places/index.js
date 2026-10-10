@@ -78,13 +78,43 @@ const PLACE_FIELDS = 'id,city_id,name,type,price,note,created_at';
 /** 一次最多要多少行（理由见 cities 那个函数的注释） */
 const LIMIT_ROWS = 2000;
 
-/** 跨域头（Day 18：加了 POST；Day 22：再加 PATCH、DELETE —— 前端要能改和删） */
-const CORS_HEADERS = {
-  'Content-Type': 'application/json; charset=utf-8',
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET,POST,PATCH,DELETE,OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-};
+/* ============================================================
+   跨域（CORS）—— Day 17 打开，Day 18 加 POST，Day 22 加 PATCH/DELETE，
+   Day 24 收紧来源
+   ------------------------------------------------------------
+   以前固定返回 `Access-Control-Allow-Origin: *`（任何网页都能读）。
+   现在改成**白名单回显**：只有白名单里的「自家页面」来读，才回它自己的
+   地址；陌生网页**不回这个头**，浏览器直接拦下。curl 不受影响。
+   ============================================================ */
+
+/** 允许来读接口的网页来源（自家页面） */
+const ALLOWED_ORIGINS = [
+  'https://travel-planner-d4g8o6mee9d231c64-1499365786.tcloudbaseapp.com', // 静态托管（演示台 / backend-test）
+  'https://travel-planner-budget.app.workbuddy.host',                      // 在线发布链接
+];
+
+/** 本地调试放行：localhost / 127.0.0.1，任意端口 */
+const LOCAL_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+
+/**
+ * 跨域头。让浏览器能读、也让 OPTIONS 预检能过 —— 但只对白名单来源。
+ * @param {object} event 云函数收到的请求
+ * @returns {object} 响应头
+ */
+function corsHeaders(event) {
+  const h = (event && event.headers) || {};
+  const origin = h.origin || h.Origin || '';
+  const headers = {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Access-Control-Allow-Methods': 'GET,POST,PATCH,DELETE,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Vary': 'Origin',
+  };
+  if (ALLOWED_ORIGINS.indexOf(origin) >= 0 || LOCAL_ORIGIN_RE.test(origin)) {
+    headers['Access-Control-Allow-Origin'] = origin;
+  }
+  return headers;
+}
 
 /* ============================================================
    一、小工具（接口层的活）
@@ -674,7 +704,7 @@ async function handle(event, context) {
 
   // 浏览器发跨域 POST 前会先发一个 OPTIONS"探路"（预检），这里直接放行
   if (isHttpRequest && method === 'OPTIONS') {
-    return { statusCode: 204, headers: CORS_HEADERS, body: '' };
+    return { statusCode: 204, headers: corsHeaders(event), body: '' };
   }
 
   if (isHttpRequest && method === 'POST') {
@@ -682,12 +712,12 @@ async function handle(event, context) {
     if (!input) {
       const body = fail('请求体不是能认的 JSON 对象。请用 Content-Type: application/json，' +
         '并按 {"city":"成都","name":"锦里","type":"en"} 这样的格式发。');
-      return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify(body) };
+      return { statusCode: 400, headers: corsHeaders(event), body: JSON.stringify(body) };
     }
     const result = await addPlace(input);
     return {
       statusCode: result.http,
-      headers: CORS_HEADERS,
+      headers: corsHeaders(event),
       body: JSON.stringify(result.body),
     };
   }
@@ -699,13 +729,13 @@ async function handle(event, context) {
     if (!input) {
       const body = fail('请求体不是能认的 JSON 对象。请用 Content-Type: application/json，' +
         '并按 {"price":25} 这样的格式发（能改的字段：name / type / price / note）。');
-      return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify(body) };
+      return { statusCode: 400, headers: corsHeaders(event), body: JSON.stringify(body) };
     }
     const query = getQuery(event);
     const result = await updatePlace(query.id, input);
     return {
       statusCode: result.http,
-      headers: CORS_HEADERS,
+      headers: corsHeaders(event),
       body: JSON.stringify(result.body),
     };
   }
@@ -718,14 +748,14 @@ async function handle(event, context) {
     const result = await deletePlace(query.id);
     return {
       statusCode: result.http,
-      headers: CORS_HEADERS,
+      headers: corsHeaders(event),
       body: JSON.stringify(result.body),
     };
   }
 
   if (isHttpRequest && method !== 'GET') {
     const body = fail('这个接口支持 GET（读）、POST（新增）、PATCH（改一条）、DELETE（删一条）。收到的是 ' + method);
-    return { statusCode: 405, headers: CORS_HEADERS, body: JSON.stringify(body) };
+    return { statusCode: 405, headers: corsHeaders(event), body: JSON.stringify(body) };
   }
 
   // ---- GET ----
@@ -738,7 +768,7 @@ async function handle(event, context) {
   if (isHttpRequest) {
     return {
       statusCode: result.http,
-      headers: CORS_HEADERS,
+      headers: corsHeaders(event),
       body: JSON.stringify(result.body),
     };
   }
@@ -765,7 +795,7 @@ exports.main = async (event, context) => {
     const body = fail('后端内部出错了（不是你的请求问题），请稍后再试。');
     const isHttpRequest = !!(event && event.httpMethod);
     if (isHttpRequest) {
-      return { statusCode: 500, headers: CORS_HEADERS, body: JSON.stringify(body) };
+      return { statusCode: 500, headers: corsHeaders(event), body: JSON.stringify(body) };
     }
     return body;
   }

@@ -54,13 +54,42 @@ const FIELDS = 'id,name,created_at';
  */
 const LIMIT_ROWS = 2000;
 
-/** 跨域头。让浏览器能读，也让 OPTIONS 预检能过。 */
-const CORS_HEADERS = {
-  'Content-Type': 'application/json; charset=utf-8',
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET,OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-};
+/* ============================================================
+   跨域（CORS）—— Day 17 打开，Day 24 收紧
+   ------------------------------------------------------------
+   以前固定返回 `Access-Control-Allow-Origin: *`（任何网页都能读）。
+   现在改成**白名单回显**：只有白名单里的「自家页面」来读，才回它自己的
+   地址；陌生网页**不回这个头**，浏览器直接拦下。curl 不受影响。
+   ============================================================ */
+
+/** 允许来读接口的网页来源（自家页面） */
+const ALLOWED_ORIGINS = [
+  'https://travel-planner-d4g8o6mee9d231c64-1499365786.tcloudbaseapp.com', // 静态托管（演示台 / backend-test）
+  'https://travel-planner-budget.app.workbuddy.host',                      // 在线发布链接
+];
+
+/** 本地调试放行：localhost / 127.0.0.1，任意端口 */
+const LOCAL_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+
+/**
+ * 跨域头。让浏览器能读、也让 OPTIONS 预检能过 —— 但只对白名单来源。
+ * @param {object} event 云函数收到的请求
+ * @returns {object} 响应头
+ */
+function corsHeaders(event) {
+  const h = (event && event.headers) || {};
+  const origin = h.origin || h.Origin || '';
+  const headers = {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Access-Control-Allow-Methods': 'GET,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Vary': 'Origin',
+  };
+  if (ALLOWED_ORIGINS.indexOf(origin) >= 0 || LOCAL_ORIGIN_RE.test(origin)) {
+    headers['Access-Control-Allow-Origin'] = origin;
+  }
+  return headers;
+}
 
 /* ============================================================
    一、小工具（接口层的活）
@@ -168,13 +197,13 @@ async function handle(event, context) {
 
   // 浏览器跨域之前会先发一个 OPTIONS 探路请求，要答应它
   if (isHttpRequest && method === 'OPTIONS') {
-    return { statusCode: 204, headers: CORS_HEADERS, body: '' };
+    return { statusCode: 204, headers: corsHeaders(event), body: '' };
   }
 
   // 这个接口只读，别的方法一律拒绝
   if (isHttpRequest && method !== 'GET') {
     const body = fail('这个接口只支持 GET（只看数据，不改数据）。收到的是 ' + method);
-    return { statusCode: 405, headers: CORS_HEADERS, body: JSON.stringify(body) };
+    return { statusCode: 405, headers: corsHeaders(event), body: JSON.stringify(body) };
   }
 
   const result = await readCities();
@@ -182,7 +211,7 @@ async function handle(event, context) {
   if (isHttpRequest) {
     return {
       statusCode: result.http,
-      headers: CORS_HEADERS,
+      headers: corsHeaders(event),
       body: JSON.stringify(result.body),
     };
   }
@@ -208,7 +237,7 @@ exports.main = async (event, context) => {
     const body = fail('后端内部出错了（不是你的请求问题），请稍后再试。');
     const isHttpRequest = !!(event && event.httpMethod);
     if (isHttpRequest) {
-      return { statusCode: 500, headers: CORS_HEADERS, body: JSON.stringify(body) };
+      return { statusCode: 500, headers: corsHeaders(event), body: JSON.stringify(body) };
     }
     return body;
   }

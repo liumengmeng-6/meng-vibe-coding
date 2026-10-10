@@ -17,6 +17,46 @@
 
 const STARTED_AT = Date.now();
 
+/* ============================================================
+   跨域（CORS）—— Day 17 打开，Day 24 收紧
+   ------------------------------------------------------------
+   以前返回 `Access-Control-Allow-Origin: *`（**任何**网页都能读）。
+   现在改成**白名单回显**：只有下面这些「自家的页面」来读，才回它自己的
+   地址；陌生的网页**不回这个头**，浏览器就直接把它拦下。
+
+   ⚠️ 这不是"防黑客"—— 它是浏览器的一条安全规矩，拦的是「别人的网页
+      在用户浏览器里偷偷读我们的接口」。curl 不受跨域限制，照旧能调试。
+   ============================================================ */
+
+/** 允许来读接口的网页来源（自家页面） */
+const ALLOWED_ORIGINS = [
+  'https://travel-planner-d4g8o6mee9d231c64-1499365786.tcloudbaseapp.com', // 静态托管（演示台 / backend-test）
+  'https://travel-planner-budget.app.workbuddy.host',                      // 在线发布链接
+];
+
+/** 本地调试放行：localhost / 127.0.0.1，任意端口 */
+const LOCAL_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+
+/**
+ * 按请求头里的 Origin 组跨域响应头。
+ * @param {object} event 云函数收到的请求（HTTP 访问时带 headers）
+ * @returns {object} 响应头
+ */
+function corsHeaders(event) {
+  const h = (event && event.headers) || {};
+  const origin = h.origin || h.Origin || '';
+  const headers = {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Access-Control-Allow-Methods': 'GET,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Vary': 'Origin',
+  };
+  if (ALLOWED_ORIGINS.indexOf(origin) >= 0 || LOCAL_ORIGIN_RE.test(origin)) {
+    headers['Access-Control-Allow-Origin'] = origin;
+  }
+  return headers;
+}
+
 /**
  * 组装要返回的数据。
  * 单独抽出来，是因为下面两种返回方式都要用同一份数据。
@@ -63,14 +103,7 @@ exports.main = async (event, context) => {
   if (isHttpRequest) {
     return {
       statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json; charset=utf-8',
-        // CORS 头：今天先带上，让浏览器能跨域读结果。
-        // Day 16–20 会按课程要求正式配跨域规则，到时以那时的配置为准。
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET,OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-      },
+      headers: corsHeaders(event),
       body: JSON.stringify(data),
     };
   }
