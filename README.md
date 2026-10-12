@@ -112,7 +112,7 @@ python -m http.server 8000
 | `research.md` | 前期调研：同类产品和取舍 |
 | `AGENTS.md` | 协作规则：AI 干活时必须遵守的约定 |
 | `README.md` | 本文件，运行说明 |
-| `.workbuddy/skills/` | 项目自带的 Skill：做「筛选」这类交互时要守的规矩，外加一个能自己跑的自检脚本（详见 `TECH_DESIGN.md` 第八节） |
+| `.workbuddy/skills/` | 项目自带的 Skill：`filter-interaction`（做「筛选」这类交互要守的规矩）和 `preflight-check`（发布前检查），各带一个能自己跑的自检脚本（筛选那个详见 `TECH_DESIGN.md` 第八节；发布前检查见下面「发布前先跑一遍检查」） |
 | **`cloud/`** | **后端探路区（Day 15 起）** —— 跟上面这些**完全分开**，不影响主产品。详见下面一节 |
 
 ---
@@ -149,6 +149,40 @@ python -m http.server 8000
 演示台上的数据**全部来自云上真库**，不再是写死的假数据。
 
 > **本项目的核心承诺没变**：主产品不联网、不上传任何数据，所有计算都在你的浏览器里完成。
+
+---
+
+## 发布前先跑一遍检查（Day 25 起）
+
+**要把项目发布 / 上线之前，先在本机跑这一条命令：**
+
+```bash
+node .workbuddy/skills/preflight-check/scripts/check-preflight.js
+```
+
+它会一条条检查"上线最容易翻车的六件事"，打印 PASS / FAIL，并把结果写进
+`.workbuddy/skills/preflight-check/LAST_RUN.md`（真实输出，不是手写的总结）。
+
+| 组 | 查什么 |
+|---|---|
+| A 断网可用 | 主产品有没有偷偷引 CDN / 外链脚本、有没有 `type="module"`、公网地址是否只在白名单里 |
+| B 密钥 | 代码和文档里有没有"密钥长相"的字符串；`.env` / `*.pem` / `id_rsa` 有没有被提交进仓库 |
+| C 双击即开 | 有没有 `charset` / `viewport`、有没有以 `/` 开头的绝对路径、`app.js` 里有没有 `fetch` 本地文件 |
+| D 外链安全 | 每个 `target="_blank"` 的链接有没有带 `rel="noopener noreferrer"` |
+| E 后端跨域 | 三个云函数有没有把跨域改回通配 `*`、白名单内容是否一致、是否含线上域名 |
+| F 仓库卫生 | 有没有误传 1MB 以上的大文件、`node_modules` 有没有进仓库 |
+
+**为什么信它？因为可以当场验它"不会虚报通过"：**
+
+```bash
+node .workbuddy/skills/preflight-check/scripts/check-preflight.js --demo
+```
+
+`--demo` 会把主产品**复制一份**，往副本里**故意塞一行 CDN 外链脚本**（上线前最常犯的错），
+再整套检查跑一遍 —— 应该**报出 3 条 FAIL**（A2 / A4 / A5）。副本检查完自动删除，**真文件一个字节不动**。
+如果 `--demo` 也是全绿，说明检查坏了，它说的"通过"不能信。
+
+> 规矩细节与"检查不通过怎么办"见 `.workbuddy/skills/preflight-check/SKILL.md`。
 
 ---
 
