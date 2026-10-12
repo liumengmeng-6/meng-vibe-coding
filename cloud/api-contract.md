@@ -746,7 +746,8 @@ curl -X DELETE "https://travel-planner-d4g8o6mee9d231c64.service.tcloudbase.com/
 | 来源 | 是谁 |
 |---|---|
 | `https://travel-planner-d4g8o6mee9d231c64-1499365786.tcloudbaseapp.com` | 静态网站托管（演示台 / `/backend-test/`） |
-| `https://travel-planner-budget.app.workbuddy.host` | 在线发布链接 |
+| `https://meng-travel-plan.app.workbuddy.host` | 在线发布链接（2026-10-11 起，当前最新版） |
+| `https://travel-planner-budget.app.workbuddy.host` | 在线发布链接（旧地址，2026-10-11 前） |
 | `http://localhost:*` / `http://127.0.0.1:*`（任意端口） | 本机调试 |
 
 > **以前的 `*` 是什么意思**：允许**任何**来源的网页读这个接口。**Day 18 起接口能写数据了，但仍保持 `*`** ——

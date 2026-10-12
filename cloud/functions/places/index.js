@@ -90,7 +90,8 @@ const LIMIT_ROWS = 2000;
 /** 允许来读接口的网页来源（自家页面） */
 const ALLOWED_ORIGINS = [
   'https://travel-planner-d4g8o6mee9d231c64-1499365786.tcloudbaseapp.com', // 静态托管（演示台 / backend-test）
-  'https://travel-planner-budget.app.workbuddy.host',                      // 在线发布链接
+  'https://travel-planner-budget.app.workbuddy.host',                      // 在线发布链接（旧，2026-10-11 前的地址）
+  'https://meng-travel-plan.app.workbuddy.host',                           // 在线发布链接（新，2026-10-11 起）
 ];
 
 /** 本地调试放行：localhost / 127.0.0.1，任意端口 */
