@@ -69,6 +69,24 @@ node .workbuddy/skills/preflight-check/scripts/check-preflight.js --demo
 - 比如 E4 报"白名单里没有线上域名"，先确认是不是**刚换了发布链接** ——
   是的话，去把三个云函数的白名单都补上，而不是改脚本。
 
+## 发布之后（或回退之后）：核对线上
+
+检查通过只说明"本机这份没问题"。**发上去之后还要回头确认线上到底是什么版本**：
+
+```bash
+node .workbuddy/skills/preflight-check/scripts/check-online.js            # 和当前目录比
+node .workbuddy/skills/preflight-check/scripts/check-online.js _rollback   # 和指定目录比
+```
+
+它拉线上的 `index.html` / `app.js`，算 sha256 和本地逐字节比对，并数一下 `app.js` 里
+Day 24 查重修复的特征词 `canon` 有几处（**3 处 = v1.0 及以后，0 处 = v0.9 及以前**）。
+
+**为什么要这么做**：发布工具回一句"发布成功"不等于线上真的换了内容 ——
+缓存、上传不完整、发错目录都可能让线上还是旧的。
+**唯一可信的成功信号是"从线上取回来的字节，和我要发的那份一模一样"。**
+
+> 这条是 2026-10-12 做回退演练时补上的：那次回退和恢复，每一步都靠它确认真的生效了。
+
 ## 记录下来
 
 跑完会打印 PASS / FAIL 清单，并写下 `LAST_RUN.md`（`--demo` 写 `LAST_RUN-demo.md`）。

@@ -3,7 +3,7 @@
 > 这份文件是检查脚本的真实输出，不是手写的总结。
 > 重新跑一次脚本就会覆盖它。
 
-- 运行时间：2026/10/12 20:13:47
+- 运行时间：2026/10/12 21:12:36
 - 命令：node .workbuddy/skills/preflight-check/scripts/check-preflight.js --demo
 - 范围：主产品三件套（index.html / app.js / style.css）+ 三个云函数 + 入库文件清单
 - ⚠️ 这是「故意弄坏」的对照运行：副本的 index.html 里被塞了一行 CDN 外链脚本，

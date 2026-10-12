@@ -112,7 +112,8 @@ python -m http.server 8000
 | `research.md` | 前期调研：同类产品和取舍 |
 | `AGENTS.md` | 协作规则：AI 干活时必须遵守的约定 |
 | `README.md` | 本文件，运行说明 |
-| `.workbuddy/skills/` | 项目自带的 Skill：`filter-interaction`（做「筛选」这类交互要守的规矩）和 `preflight-check`（发布前检查），各带一个能自己跑的自检脚本（筛选那个详见 `TECH_DESIGN.md` 第八节；发布前检查见下面「发布前先跑一遍检查」） |
+| **`ROLLBACK.md`** | **回滚手册**：线上出事了看这份 —— 什么情况必须回滚、怎么退回去、退完怎么验证（2026-10-12 真实演练过） |
+| `.workbuddy/skills/` | 项目自带的 Skill：`filter-interaction`（做「筛选」这类交互要守的规矩）和 `preflight-check`（发布前检查 + 发布后核对线上），各带能自己跑的脚本（筛选那个详见 `TECH_DESIGN.md` 第八节；发布相关见下面两节） |
 | **`cloud/`** | **后端探路区（Day 15 起）** —— 跟上面这些**完全分开**，不影响主产品。详见下面一节 |
 
 ---
@@ -183,6 +184,30 @@ node .workbuddy/skills/preflight-check/scripts/check-preflight.js --demo
 如果 `--demo` 也是全绿，说明检查坏了，它说的"通过"不能信。
 
 > 规矩细节与"检查不通过怎么办"见 `.workbuddy/skills/preflight-check/SKILL.md`。
+
+---
+
+## 线上出事了？（Day 26 起）
+
+**先看 `ROLLBACK.md`** —— 那是回滚手册，每一步该怎么做都写在上面。三个必须记住的点：
+
+- **没有「一键回退」按钮。** 查过官方文档：发布工具只有「发布 / 下线」两个动作，静态托管那边同样没有回滚命令。
+  → **回退 = 把旧版本重新发布一遍。** 所以关键节点一定要打标签（`git tag`），标签就是回退时的路标。
+- **发布是覆盖式的，链接不变。** 别人手里已经拿到的链接，回退后照旧能用。
+- **回退完必须验证**，别信"发布成功"这句话 —— 要拉线上文件算 sha256，和目标版本**逐字节比对**。
+
+配套脚本（拉线上文件、算 sha256、和本地比对）：
+
+```bash
+node .workbuddy/skills/preflight-check/scripts/check-online.js            # 和当前目录比
+node .workbuddy/skills/preflight-check/scripts/check-online.js _rollback   # 和指定目录比
+```
+
+它会顺手告诉你线上 `app.js` 里 `canon` 出现了几处 —— 这个项目现成的"版本指纹"：
+**3 处 = v1.0 及以后；0 处 = v0.9 及以前**，一眼看出线上是新是旧。
+
+> **实测耗时（2026-10-12 真跑过一次）**：发布 **36 秒** / 回退到旧版 **37 秒** / 恢复回 v1.0 **26 秒**。
+> 全程链接没变，三次发布用的是同一个地址、同一个沙箱。
 
 ---
 

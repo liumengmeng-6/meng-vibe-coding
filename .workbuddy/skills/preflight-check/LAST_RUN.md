@@ -3,7 +3,7 @@
 > 这份文件是检查脚本的真实输出，不是手写的总结。
 > 重新跑一次脚本就会覆盖它。
 
-- 运行时间：2026/10/12 20:13:47
+- 运行时间：2026/10/12 21:22:42
 - 命令：node .workbuddy/skills/preflight-check/scripts/check-preflight.js
 - 范围：主产品三件套（index.html / app.js / style.css）+ 三个云函数 + 入库文件清单
 
@@ -15,8 +15,8 @@ A. 断网可用（AC14 / AC15 —— 只管主产品三件套）
   [PASS] A5 主产品里没有 CDN 关键字（cdn. / unpkg / jsdelivr …） —— 比对了 7 个关键字，一个都没出现
 
 B. 密钥（真钥匙不出门）
-  [PASS] B1 入库文件里没有"密钥长相"的字符串 —— 扫了 29 个文本文件 × 6 种密钥长相，0 命中
-  [PASS] B2 没有把密钥 / 凭证文件提交进仓库（.env / *.pem / id_rsa …） —— 共检查 30 个入库文件
+  [PASS] B1 入库文件里没有"密钥长相"的字符串 —— 扫了 31 个文本文件 × 6 种密钥长相，0 命中
+  [PASS] B2 没有把密钥 / 凭证文件提交进仓库（.env / *.pem / id_rsa …） —— 共检查 32 个入库文件
   [PASS] B3a .gitignore 仍在挡 .env
   [PASS] B3b .gitignore 仍在挡 凭证文件（credentials*.json）
   [PASS] B3c .gitignore 仍在挡 *.pem
