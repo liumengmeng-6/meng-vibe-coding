@@ -255,6 +255,89 @@ function unsupportedCityMessage(name) {
     '目前只能规划国内城市，比如：北京、上海、广州、成都、重庆、西安。';
 }
 
+/* ---------- 「一次填了不止一个城市」的识别（Day 27 真人反馈后加） ----------
+
+   真人反馈原话：在「想去的城市」里一次填了两个，点「添加」按钮按不动、没反应，很懵。
+
+   先说结论：按钮从来没被禁用过（代码里 disabled 只用在「生成方案」上）。
+   真正发生的是 —— 一次只能加一个城市，但页面从没说过这句话，
+   于是那句报错把「一次填了俩」误诊成「这座城市不支持」：
+
+     「成都、重庆」暂时不支持。目前只能规划国内城市，比如：…成都、重庆…
+
+   ——同一句话里自己打自己（嘴上说不支持，举的例子偏偏就有成都和重庆）。
+   用户只会得出一个结论：这按钮坏了。
+
+   所以这里补一层判断：报「不支持」之前，先看看是不是"一次填了不止一个"。
+   是的话换一句专门的话（multiCityMessage），把真正的原因说出来。
+   ⚠️ 只加判断和文案，不加新功能（Day 27 清单：今日不做加新功能）——
+   「一次加一个」这个口径本身没变，变的是"页面终于把它说清楚了"。 */
+
+/* 把用户一次填进来的一串字，拆成几个城市名（只读，不改任何状态）。
+   返回：拆出来的城市名数组（只有 ≥2 个时才返回）；判断不出"多个"就返回 null。
+   调用点保证：传进来的一定【不是】单个已知城市（addCity 里已经先判过了）。 */
+function splitMultiCityInput(raw) {
+  var s = String(raw == null ? '' : raw).trim();
+  if (s === '') return null;
+  if (isKnownChineseCity(s)) return null;   // 兜底：整串就是一个城市，别乱拆
+
+  /* ① 有分隔符 → 按分隔符拆。逗号/顿号（中英文都算）、空格、分号、斜杠、加号。
+     ⚠️ 故意不把「和」「及」当分隔符：城市名里可能带这些字
+        （比如「和田」），当分隔符会把正常城市名拆坏，宁可漏判也别误伤。 */
+  var parts = s.split(/[\s,，、;；/／|｜+＋]+/).filter(function (x) { return x !== ''; });
+  if (parts.length >= 2) {
+    /* 至少要有两段能认出是城市，才按"一次填了多个"处理；
+       否则（比如「成都、火星」）还是交给原来的「不支持」提示。 */
+    var known = 0;
+    for (var i = 0; i < parts.length; i++) {
+      if (isKnownChineseCity(parts[i])) known++;
+    }
+    return known >= 2 ? parts : null;
+  }
+
+  /* ② 没有分隔符，但可能是「成都重庆」这种连写 → 试着切成几段已知城市名 */
+  var seg = segmentKnownCities(parts[0]);
+  return (seg && seg.length >= 2) ? seg : null;
+}
+
+/* 把一串字切成「一段一段的已知城市名」（连写用）。
+   「成都重庆」→ ['成都','重庆']；「北京上海广州」→ ['北京','上海','广州']。
+   切不干净（里面有认不出的字）就返回 null。
+   城市名有 2 字的（成都）也有 3 字的（哈尔滨），所以每处都试 2 字和 3 字。 */
+function segmentKnownCities(s) {
+  var memo = {};
+  function go(i) {
+    if (i >= s.length) return [];
+    if (memo[i] !== undefined) return memo[i];
+    memo[i] = null;                              // 标记"正在试"，防死循环
+    var lens = [2, 3];
+    for (var k = 0; k < lens.length; k++) {
+      var piece = s.substr(i, lens[k]);
+      if (piece.length < lens[k]) continue;      // 尾段不够长，跳过
+      if (!isKnownChineseCity(piece)) continue;
+      var rest = go(i + lens[k]);
+      if (rest) {
+        memo[i] = [normalizeCityName(piece)].concat(rest);
+        return memo[i];
+      }
+    }
+    return null;
+  }
+  return go(0);
+}
+
+/* 「一次填了不止一个城市」那句话 —— 跟 unsupportedCityMessage 一样，只写一遍。
+   句子结构：先说真正的原因（一次只能加一个），再说他填了哪几个，
+   最后给下一步动作（先加第一个，再加下一个）—— 不用用户自己想下一步。 */
+function multiCityMessage(parts) {
+  var show = '';
+  var n = Math.min(parts.length, 3);
+  for (var i = 0; i < n; i++) show += '「' + parts[i] + '」';
+  if (parts.length > 3) show += ' 等';
+  return '一次只能加一个城市 —— 你填了 ' + parts.length + ' 个：' + show +
+    '。先加「' + parts[0] + '」，再加下一个。';
+}
+
 /* 常见城市的大致坐标（只用于估算距离，不画地图、不联网） */
 var CITY_COORDS = {
   '北京': { lat: 39.90, lng: 116.41 },
@@ -2983,7 +3066,11 @@ function addCity() {
      因为那两条都是"这个城市本身没问题，只是加不进去"，
      而这条是"这个城市根本用不了"，性质更严重，该先说。 */
   if (!isKnownChineseCity(name)) {
-    setCityHint(unsupportedCityMessage(name));
+    /* Day 27 真人反馈：一次填了两个（「成都、重庆」）时，原来会直接说
+       「『成都、重庆』暂时不支持……比如：…成都、重庆…」——一句话里自己打自己，
+       用户以为按钮坏了。所以报「不支持」之前，先看看是不是"一次填了不止一个"。 */
+    var multi = splitMultiCityInput(name);
+    setCityHint(multi ? multiCityMessage(multi) : unsupportedCityMessage(name));
     input.focus();
     return;
   }
@@ -3539,6 +3626,20 @@ function hideResetConfirm() {
 
 /* ---------- F. 初始化 ---------- */
 
+/* 「按游玩顺序填写」那句例子里的出发地，跟着上面「出发城市」输入框走（Day 27）。
+   原来这句例子把「武汉」写死在 HTML 里：出发地填别的城市，页面还在教
+   「武汉→成都→重庆→武汉」，新手会以为必须从武汉出发，或者怀疑自己是不是填错了。
+   只换例子里的城市名 —— 规则本身（出发地 → 城市1 → … → 城市N → 回出发地）没变。
+   没填 / 不是内置城市时，退回默认的「武汉」示例。 */
+function updateOrderExample() {
+  var el = document.getElementById('order-example');
+  if (!el) return;
+  var from = normalizeCityName(document.getElementById('from-city').value);
+  if (!isKnownChineseCity(from)) from = '武汉';
+  el.textContent = '例：' + from + ' → 成都 → 重庆，就先加成都、再加重庆。' +
+                   '系统会算「' + from + '→成都→重庆→' + from + '」的完整往返。';
+}
+
 function initApp() {
   document.getElementById('btn-generate').addEventListener('click', generate);
   document.getElementById('btn-add-city').addEventListener('click', addCity);
@@ -3565,6 +3666,11 @@ function initApp() {
      另外补一个 change：鼠标点「添加」按钮时也会先触发 blur，
      所以正常操作路径已经覆盖；change 是给"改完直接提交"这类情况的兜底。 */
   document.getElementById('from-city').addEventListener('blur', checkFromCity);
+
+  /* 例子里的出发地跟着你填的城市走（Day 27）：边打字边更新；
+     进页面时先按默认值设一次（输入框空着 → 显示「武汉」示例）。 */
+  document.getElementById('from-city').addEventListener('input', updateOrderExample);
+  updateOrderExample();
 
   /* ---------- 视图标签（Day 13） ----------
      三个标签：点一下切视图。

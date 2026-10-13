@@ -3,7 +3,7 @@
 > 这份文件是检查脚本的真实输出，不是手写的总结。
 > 重新跑一次脚本就会覆盖它。
 
-- 运行时间：2026/10/12 21:22:42
+- 运行时间：2026/10/13 17:51:18
 - 命令：node .workbuddy/skills/preflight-check/scripts/check-preflight.js
 - 范围：主产品三件套（index.html / app.js / style.css）+ 三个云函数 + 入库文件清单
 
@@ -38,7 +38,7 @@ E. 后端跨域白名单（Day 24 的成果别被改回去）
   [PASS] E4 白名单里有线上发布域名（*.app.workbuddy.host） —— https://meng-travel-plan.app.workbuddy.host , https://travel-planner-budget.app.workbuddy.host
 
 F. 仓库卫生（防手滑）
-  [PASS] F1 入库文件里没有超过 1MB 的（防误传大文件） —— 最大的一个是 app.js（162KB）
+  [PASS] F1 入库文件里没有超过 1MB 的（防误传大文件） —— 最大的一个是 app.js（168KB）
   [PASS] F2 node_modules 没有被提交进仓库 —— 干净
 
 ========================================================

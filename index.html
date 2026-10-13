@@ -66,9 +66,7 @@
       </div>
 
       <div class="field">
-        <label for="to-city-input">想去的城市 <span class="required">*</span>
-          <span class="hint">最多 4 个</span>
-        </label>
+        <label for="to-city-input">想去的城市 <span class="required">*</span></label>
         <div class="city-picker">
           <input type="text" id="to-city-input" placeholder="输入城市名后按「添加」，例如：西安" maxlength="10" autocomplete="off">
           <button type="button" class="btn btn-ghost" id="btn-add-city">添加</button>
@@ -79,11 +77,12 @@
              报错要贴在出错的控件旁边，这是基本要求。 -->
         <p class="error" id="error-to-city" hidden></p>
         <div class="chips" id="city-chips" aria-live="polite"></div>
+        <p class="field-note">最多能填 4 个城市；一次加一个 —— 填一个 → 点「添加」→ 再填下一个。</p>
         <p class="field-note">目前只支持国内城市；加了别的城市会当场提示，不会加进列表。</p>
         <p class="field-note">内置了成都、重庆的推荐清单；其他城市也能去，清单自己添加。</p>
         <p class="order-note">
-          <b>请按游玩顺序填写</b>（先去的写前面）。例：武汉 → 成都 → 重庆，就先加成都、再加重庆。
-          系统会算「武汉→成都→重庆→武汉」的完整往返。
+          <b>请按游玩顺序填写</b>（先去的写前面）。<span id="order-example">例：武汉 → 成都 → 重庆，就先加成都、再加重庆。
+          系统会算「武汉→成都→重庆→武汉」的完整往返。</span>
         </p>
       </div>
 
