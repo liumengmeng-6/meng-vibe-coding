@@ -3,7 +3,7 @@
 > 这份文件是检查脚本的真实输出，不是手写的总结。
 > 重新跑一次脚本就会覆盖它。
 
-- 运行时间：2026/10/13 17:51:18
+- 运行时间：2026/10/15 21:00:49
 - 命令：node .workbuddy/skills/preflight-check/scripts/check-preflight.js
 - 范围：主产品三件套（index.html / app.js / style.css）+ 三个云函数 + 入库文件清单
 
