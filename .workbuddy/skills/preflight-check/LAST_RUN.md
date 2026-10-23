@@ -3,7 +3,7 @@
 > 这份文件是检查脚本的真实输出，不是手写的总结。
 > 重新跑一次脚本就会覆盖它。
 
-- 运行时间：2026/10/15 21:00:49
+- 运行时间：2026/10/23 11:42:07
 - 命令：node .workbuddy/skills/preflight-check/scripts/check-preflight.js
 - 范围：主产品三件套（index.html / app.js / style.css）+ 三个云函数 + 入库文件清单
 
@@ -15,8 +15,8 @@ A. 断网可用（AC14 / AC15 —— 只管主产品三件套）
   [PASS] A5 主产品里没有 CDN 关键字（cdn. / unpkg / jsdelivr …） —— 比对了 7 个关键字，一个都没出现
 
 B. 密钥（真钥匙不出门）
-  [PASS] B1 入库文件里没有"密钥长相"的字符串 —— 扫了 31 个文本文件 × 6 种密钥长相，0 命中
-  [PASS] B2 没有把密钥 / 凭证文件提交进仓库（.env / *.pem / id_rsa …） —— 共检查 32 个入库文件
+  [PASS] B1 入库文件里没有"密钥长相"的字符串 —— 扫了 32 个文本文件 × 6 种密钥长相，0 命中
+  [PASS] B2 没有把密钥 / 凭证文件提交进仓库（.env / *.pem / id_rsa …） —— 共检查 33 个入库文件
   [PASS] B3a .gitignore 仍在挡 .env
   [PASS] B3b .gitignore 仍在挡 凭证文件（credentials*.json）
   [PASS] B3c .gitignore 仍在挡 *.pem
@@ -38,7 +38,7 @@ E. 后端跨域白名单（Day 24 的成果别被改回去）
   [PASS] E4 白名单里有线上发布域名（*.app.workbuddy.host） —— https://meng-travel-plan.app.workbuddy.host , https://travel-planner-budget.app.workbuddy.host
 
 F. 仓库卫生（防手滑）
-  [PASS] F1 入库文件里没有超过 1MB 的（防误传大文件） —— 最大的一个是 app.js（168KB）
+  [PASS] F1 入库文件里没有超过 1MB 的（防误传大文件） —— 最大的一个是 app.js（209KB）
   [PASS] F2 node_modules 没有被提交进仓库 —— 干净
 
 ========================================================
