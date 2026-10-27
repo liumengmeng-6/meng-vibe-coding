@@ -1143,7 +1143,27 @@ function calcCost(split, totalDays) {
   var foodSum   = food.sum   + PRICES.foodPerDay   * transitDays;
   var ticketSum = ticket.sum + PRICES.ticketPerDay * transitDays;
 
-  var total = intercity + cityTransfer + hotel + foodSum + ticketSum;
+  /* 「当天花费估算」被用户单独改过的天 → 差额进总账。
+     为什么按"差额"而不是"整体替换"：总账里每天的吃/门票/市内交通已经算过了，
+     用户把某天从标准 ¥160 改成 ¥200，真正要加进总账的只是那 ¥40。
+     改动存在 itineraryEdits['c:城市:第几天'].cost（跟行程修改同一个存档），
+     换了天数/城市后 key 对不上的改动自然失效 —— 和行程修改的过期规则一致。
+     账本里会单独多一行「你的修改」，把改了哪几天、各是多少写明白，
+     不做暗箱调整（页面上凡是算出来的数字差异，必须能对上来源）。 */
+  var dayDelta = 0;
+  var dayDeltaNotes = [];
+  var stdDay = defaultDayCost();
+  for (var ci = 0; ci < plan.length; ci++) {
+    for (var cd = 0; cd < plan[ci].days; cd++) {
+      var ov = costOverrideFor('c:' + plan[ci].city + ':' + cd);
+      if (ov !== null && ov !== stdDay) {
+        dayDelta += ov - stdDay;
+        dayDeltaNotes.push(plan[ci].city + ' 第 ' + (cd + 1) + ' 天改按 ¥' + ov);
+      }
+    }
+  }
+
+  var total = intercity + cityTransfer + hotel + foodSum + ticketSum + dayDelta;
 
   /* 城际交通这一行的口径说明。
      为什么要在个别城市没数据时特别写出来：合计里混着估算的钱，
@@ -1154,14 +1174,24 @@ function calcCost(split, totalDays) {
     intercityDetail += '（含 ' + estimatedLegs + ' 段估算值，仅供参考）';
   }
 
+  var items = [
+    { key: 'intercity',    label: '城际交通', detail: intercityDetail, amount: intercity },
+    { key: 'cityTransfer', label: '市内交通', detail: PRICES.cityTransferPerDay + ' 元/天 × ' + totalDays + ' 天', amount: cityTransfer },
+    { key: 'hotel',        label: '住宿',     detail: PRICES.hotelPerNight + ' 元/晚 × ' + Math.max(0, totalDays - 1) + ' 晚', amount: hotel },
+    { key: 'food',         label: '吃',       detail: perDayDetail(PRICES.foodPerDay, totalDays, food),     amount: foodSum },
+    { key: 'ticket',       label: '门票',     detail: perDayDetail(PRICES.ticketPerDay, totalDays, ticket), amount: ticketSum }
+  ];
+  if (dayDelta !== 0) {
+    items.push({
+      key: 'dayEdits',
+      label: '你的修改',
+      detail: dayDeltaNotes.join('；') + '（标准 ¥' + stdDay + '/天，差额按天进账）',
+      amount: dayDelta
+    });
+  }
+
   return {
-    items: [
-      { key: 'intercity',    label: '城际交通', detail: intercityDetail, amount: intercity },
-      { key: 'cityTransfer', label: '市内交通', detail: PRICES.cityTransferPerDay + ' 元/天 × ' + totalDays + ' 天', amount: cityTransfer },
-      { key: 'hotel',        label: '住宿',     detail: PRICES.hotelPerNight + ' 元/晚 × ' + Math.max(0, totalDays - 1) + ' 晚', amount: hotel },
-      { key: 'food',         label: '吃',       detail: perDayDetail(PRICES.foodPerDay, totalDays, food),     amount: foodSum },
-      { key: 'ticket',       label: '门票',     detail: perDayDetail(PRICES.ticketPerDay, totalDays, ticket), amount: ticketSum }
-    ],
+    items: items,
     total: total,
     hasEstimate: estimatedLegs > 0,
     hasSelfAdded: food.hasAny || ticket.hasAny
@@ -1810,7 +1840,7 @@ function renderDetailEditor(td, row, items) {
   // 顶部说明：为什么改安排不动花费（对应 ②A 的选择）
   var tip = document.createElement('p');
   tip.className = 'edit-tip';
-  tip.textContent = '改这里只改安排内容；当天的花费是按时天固定标准估的，不会跟着变。';
+  tip.textContent = '改这里只改安排内容；当天的花费想改的话，点右边花费格里的「改」。';
   wrap.appendChild(tip);
 
   for (var i = 0; i < items.length; i++) {
@@ -1967,12 +1997,94 @@ function commitRowEdit(row, items) {
   var cleaned = items.filter(function (s) { return String(s).trim() !== ''; })
                      .map(function (s) { return String(s).trim(); });
 
+  /* ⚠️ 这一天的花费可能也被单独改过（cost 字段）—— 必须带过来。
+     整个对象一脚踢开重写的话，改过的花费会被这里洗掉（静默丢失）。 */
+  var prev = itineraryEdits[key] || {};
   itineraryEdits[key] = { items: cleaned, dirty: true };
+  if (typeof prev.cost === 'number') { itineraryEdits[key].cost = prev.cost; }
   saveItineraryEdits();
 
   editingRowKey = null;   // 退出编辑态
   editDraft = null;
   repaintItinerary();
+}
+
+/* ============================================================
+   「当天花费估算」的提交与总账重算
+   ============================================================ */
+
+/* 落一笔花费修改。rawValue 是输入框里的原文：
+   · 空字符串 → 清掉覆盖，恢复标准（等于"我没改过"）
+   · 非负数字 → 存进 itineraryEdits[key].cost
+   · 乱填（负数 / 非数字）→ 当取消处理，什么都不写
+   写完不只重画行程表 —— 总账、预算结论、方案卡片全都按新数重算
+   （用户反馈的原话就是"后面也要重新计算总花费"）。 */
+function commitCostEdit(row, rawValue) {
+  var key = rowKeyOf(row);
+  var v = String(rawValue).trim();
+
+  if (v === '') {
+    var e0 = itineraryEdits[key];
+    if (e0) { delete e0.cost; }
+  } else {
+    var n = Number(v);
+    if (!isFinite(n) || n < 0) {          // 乱填 → 当取消，不写存档
+      editingCostKey = null;
+      repaintItinerary();
+      return;
+    }
+    var e = itineraryEdits[key] || {};
+    e.cost = Math.round(n);               // 金额取整：账面不出现小数
+    itineraryEdits[key] = e;
+  }
+
+  /* 只挂 items 才算"安排改过"：单纯改花费不该给安排格挂「已改」，
+     两个「已改」各归各（安排格的挂安排格，花费格的挂花费格）。 */
+  var e2 = itineraryEdits[key];
+  if (e2 && Array.isArray(e2.items)) { e2.dirty = true; }
+  if (e2 && !Array.isArray(e2.items) && typeof e2.cost !== 'number') {
+    delete itineraryEdits[key];           // 清完花费又没有安排 → 整条删掉
+  }
+  saveItineraryEdits();
+
+  editingCostKey = null;
+  recalcAfterDayEdit();
+}
+
+/* 花费改完后的重算：把三套方案的总账全部重算（不是只算当前这套 ——
+   方案卡片上并排摆着三套的总价，都按同一份"用户改过的天"走，必须一起刷新），
+   然后照 switchPlan 的规矩无条件重画全部结果块（hidden 的块也要画，
+   否则切视图会看到旧数字 —— Day 14 在这里踩过"只画当前视图"的坑）。 */
+function recalcAfterDayEdit() {
+  if (!lastInput || !lastPlans) { return; }
+
+  for (var i = 0; i < lastPlans.length; i++) {
+    lastPlans[i].cost = calcCost(lastPlans[i].split, lastInput.days);
+    lastPlans[i].total = lastPlans[i].cost.total;
+  }
+
+  var picked = null;
+  for (var j = 0; j < lastPlans.length; j++) {
+    if (lastPlans[j].id === activePlanId) { picked = lastPlans[j]; }
+  }
+  if (!picked) { picked = lastPlans[0]; }
+
+  var chosenKeys = [];
+  for (var k = 0; k < picked.legs.length; k++) {
+    chosenKeys.push(picked.legs[k].chosen.key);
+  }
+
+  var verdict = compareBudget(picked.cost, lastInput.budget, picked.legs, {
+    plan: picked.split.plan,
+    totalDays: lastInput.days,
+    cheaperPlan: cheaperOf(lastPlans, picked)
+  });
+
+  renderPlans(lastPlans, activePlanId);
+  renderItinerary(picked.split, lastInput);
+  renderTransport(picked.split, chosenKeys);
+  renderCost(picked.cost);
+  renderBudget(verdict);
 }
 
 /* 只重画行程表那一块（不重新算、不动其他块）。
@@ -2092,6 +2204,9 @@ function renderItinerary(split, input) {
          让它们留在 items 里的话，用户会以为自己填的内容里真带着这几个字。 */
       var items = slice.map(function (x) { return x.text; });
 
+      // 这一天的花费有没有被用户单独改过（有 → 盖回来 + 挂「已改」）
+      var dayOv = costOverrideFor('c:' + city + ':' + d);
+
       // 最后一天：如果内容没排完，如实告诉用户"还剩几条没排进去"
       //   为什么必须说：用户自己加的地点若因为天数不够被吞掉，他会以为"加了没用"
       // 最后一天：如果内容没排完，把"没排上的那几条"挂在这一行上（Day 11 改成可展开）
@@ -2126,7 +2241,10 @@ function renderItinerary(split, input) {
         //   ⚠️ Day 15：这个数是【固定公式】算的，跟上面 items 写了什么无关。
         //      用户改行程不会改动它 —— 界面上要写清这一点，否则用户会以为
         //      把"熊猫基地"改成"迪士尼"门票就变了。
-        cost: PRICES.cityTransferPerDay + PRICES.foodPerDay + PRICES.ticketPerDay,
+        //   ⚠️ 用户后来单独改过这一天的花费（点花费格里的「改」）→ 用他改的数，
+        //      并挂 costEdited 标记（花费格显示「已改」）。存取规则见 costOverrideFor。
+        cost: (dayOv !== null) ? dayOv : defaultDayCost(),
+        costEdited: (dayOv !== null),
         hasSelf: slice.some(function (x) { return x.self; })
       });
     }
@@ -2230,9 +2348,12 @@ function renderItinerary(split, input) {
       td3.appendChild(moreWhy);
     }
 
+    /* 当天花费估算格（用户 2026-10-27 反馈：改成可修改的，总花费跟着重算）。
+       画格子的活交给 renderCostCell —— 为什么必须单独抽函数，
+       见它头顶那段说明（闭包捕获循环变量的坑）。 */
     var td4 = document.createElement('td');
-    td4.className = 'num';
-    td4.textContent = row.cost > 0 ? ('约 ' + row.cost + ' 元') : '—';
+    td4.className = 'num col-cost';
+    renderCostCell(td4, row);
 
     tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tr.appendChild(td4);
     tbody.appendChild(tr);
@@ -2248,6 +2369,106 @@ function renderItinerary(split, input) {
     editingRowKey = null;
     editDraft = null;
   }
+  /* 花费编辑同理：正改着的那行没了（切方案/改天数）就退出，
+     别让编辑态卡在一个永远匹配不上的 key 上。 */
+  if (editingCostKey !== null && !liveKeys[editingCostKey]) {
+    editingCostKey = null;
+  }
+}
+
+/* 「当天花费估算」这一格怎么画（2026-10-27 新增，用户反馈：当天花费要可修改）
+
+   只读态：数字 +（改过就挂「已改」）+「改」按钮；
+   编辑态：一个数字输入框 + 完成 / 取消（回车=完成，Esc=取消）。
+   和左边安排格的编辑互斥：进花费编辑先退出安排编辑，反之亦然 ——
+   两套输入框同时开着，用户分不清"我正在改哪个"。
+
+   ⚠️ 为什么必须单独抽成函数（和 renderDetailCell 同一个道理）：
+     这里的"改"按钮要挂这一行专属的处理器，闭包得捕获【这一行】的 key。
+     本功能第一版把这段内联在 renderItinerary 的行循环里 —— 循环变量
+     var row 是函数级的，循环结束后闭包里看到的 row 永远是最后一行，
+     点第 1 天的「改」，editingCostKey 却被设成返程行的 't:重庆 → 武汉'，
+     编辑态永远打不开（探针当场抓到的，Day 7 的老坑换了个地方又踩一次）。 */
+function renderCostCell(td, row) {
+  var key = rowKeyOf(row);
+
+  if (row.type === 'city' && editingCostKey === key) {
+    /* ---------- 编辑态 ---------- */
+    var costWrap = document.createElement('span');
+    costWrap.className = 'cost-edit';
+
+    var costInput = document.createElement('input');
+    costInput.type = 'number';
+    costInput.min = '0';
+    costInput.step = '1';
+    costInput.className = 'cost-edit-input';
+    costInput.value = (row.cost > 0 ? String(row.cost) : '');
+    costInput.setAttribute('aria-label',
+      row.label + ' 第 ' + (row.cityDayIndex + 1) + ' 天的花费（元，留空恢复标准）');
+
+    var costOk = document.createElement('button');
+    costOk.type = 'button';
+    costOk.className = 'btn btn-primary cost-edit-btn';
+    costOk.textContent = '完成';
+    costOk.addEventListener('click', function () {
+      commitCostEdit(row, costInput.value);
+    });
+
+    var costNo = document.createElement('button');
+    costNo.type = 'button';
+    costNo.className = 'btn btn-quiet cost-edit-btn';
+    costNo.textContent = '取消';
+    costNo.addEventListener('click', function () {
+      editingCostKey = null;
+      repaintItinerary();
+    });
+
+    costInput.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter') { commitCostEdit(row, costInput.value); }
+      else if (ev.key === 'Escape') { editingCostKey = null; repaintItinerary(); }
+    });
+
+    costWrap.appendChild(costInput);
+    costWrap.appendChild(costOk);
+    costWrap.appendChild(costNo);
+    td.appendChild(costWrap);
+    return;
+  }
+
+  /* ---------- 只读态 ---------- */
+  td.textContent = row.cost > 0 ? ('约 ' + row.cost + ' 元') : '—';
+
+  if (row.type !== 'city') { return; }   // 在途行花费恒为 0（钱在城际交通里算），不给改的入口
+
+  // 用户单独改过这一天的花费 → 挂「已改」（和安排格的「已改」各归各）
+  if (row.costEdited) {
+    var costBadge = document.createElement('span');
+    costBadge.className = 'edited-badge cost-badge';
+    costBadge.textContent = '已改';
+    costBadge.title = '这一天的花费你改过（标准 ¥' + defaultDayCost() + '/天）';
+    td.appendChild(costBadge);
+  }
+
+  var costBtn = document.createElement('button');
+  costBtn.type = 'button';
+  costBtn.className = 'edit-btn cost-edit-btn';
+  costBtn.textContent = '改';
+  costBtn.setAttribute('aria-label',
+    row.label + ' 第 ' + (row.cityDayIndex + 1) + ' 天的花费，进入修改');
+  costBtn.addEventListener('click', function () {
+    editingRowKey = null;
+    editDraft = null;
+    editingCostKey = key;          // key 是本函数自己的 —— 闭包安全
+    repaintItinerary();
+    /* 焦点直接进输入框（和「编辑」同一个道理：键盘用户不用再 Tab 一圈） */
+    var tb = document.getElementById('table-itinerary').querySelector('tbody');
+    var tr2 = tb.querySelector('tr[data-row-key="' + cssEscape(key) + '"]');
+    if (tr2) {
+      var inp2 = tr2.querySelector('.cost-edit-input');
+      if (inp2) { inp2.focus(); }
+    }
+  });
+  td.appendChild(costBtn);
 }
 
 /* B2 城际交通对比：每一段路，把它所有可行方式都列出来
@@ -2462,7 +2683,7 @@ function renderCost(cost) {
 
   var trTotal = document.createElement('tr');
   trTotal.className = 'row-total';
-  trTotal.innerHTML = '<td>合计</td><td>以上五项相加</td><td class="num" id="cost-total">¥0</td>';
+  trTotal.innerHTML = '<td>合计</td><td>以上 ' + cost.items.length + ' 项相加</td><td class="num" id="cost-total">¥0</td>';
   tbody.appendChild(trTotal);
 
   /* 合计里混了估算值时，在账本底部补一句总声明。
@@ -2477,7 +2698,7 @@ function renderCost(cost) {
     var note = document.createElement('p');
     note.id = 'cost-estimate-note';
     note.className = 'field-note';
-    note.textContent = '⚠️ 上面的城际交通含估算值 —— 有城市不在数据表里（目前覆盖 24 个主要城市），' +
+    note.textContent = '⚠️ 上面的城际交通含估算值 —— 有城市不在数据表里（已覆盖全国 700+ 城市，个别小城仍可能缺），' +
       '票价和耗时按同类路线估算，仅供参考。实际请以铁路 12306 / 航司官网为准。';
     if (tbody.parentNode) tbody.parentNode.appendChild(note);
   }
@@ -3042,6 +3263,7 @@ var editDraft = null;
 function exitRowEditing() {
   editingRowKey = null;
   editDraft = null;
+  editingCostKey = null;
 }
 
 /* 算一行的稳定 key（用户修改就按这个 key 对号入座）。
@@ -3120,6 +3342,35 @@ function itemsForRow(row) {
 function isRowEdited(row) {
   var e = itineraryEdits[rowKeyOf(row)];
   return !!(e && e.dirty);
+}
+
+/* ============================================================
+   「当天花费估算」可修改（用户 2026-10-27 反馈：
+   改成可编辑的，改完总花费要跟着重算）
+   ============================================================ */
+
+/* 正在改哪一天的花费（行 key）。和 editingRowKey 同一套规矩：
+   一次只允许一格进编辑态，且两种编辑互斥 —— 点「改」会退出安排编辑，
+   点「编辑」会退出花费编辑，不然两套输入框同时飘着说不清。 */
+var editingCostKey = null;
+
+/* 每天的标准花费（就是行程表里那个默认数）：
+   市内交通 + 吃 + 门票。住宿按"晚"单独算，不在这里。 */
+function defaultDayCost() {
+  return PRICES.cityTransferPerDay + PRICES.foodPerDay + PRICES.ticketPerDay;
+}
+
+/* 取某天"用户改过的花费"。没改过返回 null（不是 0 —— 0 是合法的改法）。
+   存档位置和行程修改同一个：itineraryEdits['c:城市:第几天'].cost。
+   为什么跟行程修改放一起：过期规则完全一致 —— 换了天数/城市，
+   key 对不上就自然失效，用户不会看到"改到别的天头上"的怪事。
+   防御：只认"≥ 0 的有限数字"，本地存储里被改坏的值一律当没改过。 */
+function costOverrideFor(key) {
+  var e = itineraryEdits[key];
+  if (e && typeof e.cost === 'number' && isFinite(e.cost) && e.cost >= 0) {
+    return e.cost;
+  }
+  return null;
 }
 
 /* ============================================================

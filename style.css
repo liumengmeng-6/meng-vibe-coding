@@ -2082,6 +2082,52 @@ html { overflow-x: hidden; }
   box-shadow: 0 0 0 3px var(--brand-soft);
 }
 
+/* 「当天花费估算」的编辑态（2026-10-27 加）。
+   花费格在表格最右列，空间窄 —— 输入框做得比安排编辑的小，
+   数字输入框宽度按 4 位数字预留，两个按钮收成小号。 */
+.cost-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.cost-edit-input {
+  width: 76px;                    /* 4 位数字 + 步进按钮刚好，再宽会顶出列 */
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-3);
+  color: var(--ink);
+  text-align: right;
+}
+
+.cost-edit-input:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+
+.cost-edit-btn {
+  padding: 4px 10px;
+  font-size: 12.5px;
+}
+
+/* 花费格的「改」按钮：跟安排格的「编辑」一个长相（虚线胶囊），
+   但列窄，外边距收小一点。 */
+td.col-cost .edit-btn {
+  margin-top: 4px;
+  margin-left: 4px;
+}
+
+td.col-cost .cost-badge {
+  margin-top: 0;
+  margin-left: 4px;
+}
+
 .edit-tools {
   flex: none;
   display: flex;
