@@ -1373,6 +1373,68 @@ main, .page-main { flex: 1 0 auto; }
 
 .plan-legs li { margin: 0; }
 
+/* 段内交通方式下拉（2026-10-27：用户要的"某一段飞机换高铁"）。
+   用原生 select：手机上弹系统选择器，电脑上键盘可达，符合窄屏和无障碍要求。 */
+.leg-swap {
+  max-width: 15.5em;          /* 太长会撑破窄屏卡片 */
+  padding: 1px 4px;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.leg-swap:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+
+/* 「估算」小标记：这段数字是兜底估的，不是查来的 */
+.plan-est-mark {
+  margin-left: 6px;
+  padding: 0 5px;
+  font-size: 11px;
+  border-radius: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--ink-2);
+  cursor: help;
+}
+
+/* 「已手动调整」徽标：用户换过段之后挂在方案名旁 */
+.plan-badge {
+  margin-left: 8px;
+  padding: 1px 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  border-radius: 999px;
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+
+/* 换段被拒（能玩天数不够）时的一次性提示 */
+.plan-notice {
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--warn, #c77d00);
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink);
+}
+
+/* 价格口径声明：估算 + 实价自查 */
+.plan-note {
+  margin: 0 0 12px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+
 .plan-days {
   margin: 0 0 8px;
   font-size: 13px;
@@ -2513,3 +2575,326 @@ td.col-cost .cost-badge {
   50%      { text-shadow: 0 0 18px rgba(0, 229, 255, .62); }
 }
 
+
+/* ============================================================
+   2026-10-27 新增：出行工具箱 / 确认锁定 / 总览图
+   三段界面来自同一次用户反馈，样式也放一起，方便下一次改的时候一眼找全。
+   ============================================================ */
+
+/* ---------- ① 出行工具箱（跳抖音/小红书/12306/美团…的集中入口） ---------- */
+.toolbox-kw {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink-2);
+}
+.toolbox-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
+  gap: 10px;
+}
+.tool-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  text-decoration: none;
+  transition: border-color .16s ease, transform .16s ease;
+}
+.tool-btn:hover {
+  border-color: var(--brand);
+  transform: translateY(-1px);
+}
+.tool-btn:focus-visible {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+.tool-icon {
+  font-size: 21px;
+  line-height: 1;
+  flex: none;
+}
+.tool-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.tool-body b {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.tool-body small {
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+
+/* ---------- ② 确认区（不可逆动作，警告写在按钮上面） ---------- */
+.confirm-final {
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--brand);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.confirm-final[hidden] { display: none; }
+.confirm-final-warn {
+  margin: 0 0 12px;
+  font-size: 13.5px;
+  line-height: 1.85;
+  color: var(--ink);
+}
+.confirm-final-warn b { color: var(--bad, #b4322b); }
+.btn-lg {
+  padding: 13px 28px;
+  font-size: 15.5px;
+}
+
+/* 已确认后的状态条 */
+.locked-bar {
+  margin-top: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--good, #2f7d4e);
+  border-left: 4px solid var(--good, #2f7d4e);
+  border-radius: 10px;
+  background: var(--good-soft, #eef8f1);
+}
+.locked-bar[hidden] { display: none; }
+.locked-text {
+  margin: 0 0 10px;
+  font-size: 13.5px;
+  line-height: 1.75;
+  color: var(--ink);
+}
+.locked-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* 确认方案的二次确认条：比"清空"那句话长，让文字占主位 */
+.confirm-final-bar { align-items: flex-start; }
+.confirm-final-bar .confirm-text {
+  flex: 1;
+  line-height: 1.75;
+}
+
+/* ---------- ③ 总览图 ---------- */
+.overview-wrap {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: auto;
+  max-height: 78vh;
+  background: #ffffff;      /* 画布底色固定白：图片要发给别人看，不跟主题走 */
+}
+#overview-canvas {
+  display: block;
+  width: 100%;
+  max-width: 760px;
+  height: auto;
+  margin: 0 auto;
+}
+.overview-actions {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.overview-hint {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+
+/* ---------- ④ 锁定态：编辑入口统一灰掉 ---------- */
+/* 为什么用 body 上一个 class 统一管，而不是在每个渲染函数里各写一份 if：
+   要锁的地方有十来处（安排编辑、花费编辑、换段、换方案、加地点、删地点…），
+   逐处写 if 只要漏一个就留一个后门，而且很难测全。 */
+body.is-locked .edit-btn,
+body.is-locked .cost-edit-btn,
+body.is-locked .btn-del,
+body.is-locked .self-add,
+body.is-locked .plan-card .btn,
+body.is-locked .plan-legs select.leg-swap {
+  opacity: .45;
+  pointer-events: none;
+  cursor: not-allowed;
+}
+/* 灰掉之后得告诉人"为什么点不动"，否则就是让人猜 */
+body.is-locked #block-itinerary .card-note::after {
+  content: "（方案已确认，编辑已锁定 —— 要改请点下方「重新规划」）";
+  color: var(--bad, #b4322b);
+  font-weight: 600;
+}
+
+/* 「已锁定」小标记：确认后替换掉原来的「编辑」「改」按钮 */
+.lock-tag {
+  margin-left: 6px;
+  padding: 1px 7px;
+  font-size: 11px;
+  border-radius: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--ink-2);
+  cursor: help;
+  white-space: nowrap;
+}
+
+/* ============================================================
+   旅行档案 + 账单回填（2026-10-28）
+   档案区挂在 main 外面（footer 上面），不跟着视图切换走：
+   有档案才出现，刷新 / 清空重填之后历史还在。 */
+.archive-area { margin: 26px auto 8px; }
+
+.archive-card { margin-top: 18px; }
+.archive-card h2 { margin-top: 0; }
+
+/* 档案列表：一行一份档案（城市 · 天数 + 存档时间 + 状态） */
+.archive-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 4px;
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.archive-item:first-child { border-top: 0; }
+.archive-main { min-width: 0; flex: 1; }
+.archive-title { font-weight: 700; font-size: 16px; }
+.archive-meta { margin-top: 3px; font-size: 13px; color: var(--ink-3); }
+.archive-ops { display: flex; gap: 8px; flex-shrink: 0; }
+
+.btn-sm { padding: 6px 14px; font-size: 13px; }
+
+/* 账单回填编辑器 */
+.actual-list { margin: 6px 0 14px; }
+.actual-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 0;
+  border-bottom: 1px dashed var(--border);
+}
+.actual-info { min-width: 0; }
+.actual-label { font-weight: 600; }
+.actual-detail { margin-top: 2px; font-size: 13px; color: var(--ink-3); }
+.actual-input {
+  width: 130px;
+  padding: 9px 12px;
+  font-size: 16px;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  text-align: right;
+  flex-shrink: 0;
+}
+.actual-input:focus { outline: none; border-color: var(--brand, #2a5fe0); }
+
+/* 感悟两栏：推荐 / 避雷 */
+.sense-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 14px 0; }
+.sense-col label { display: block; font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+.sense-col textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  font-size: 15px;
+  line-height: 1.55;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  resize: vertical;
+  font-family: inherit;
+}
+.sense-col textarea:focus { outline: none; border-color: var(--brand, #2a5fe0); }
+
+.archive-actions { display: flex; gap: 10px; flex-wrap: wrap; margin: 6px 0 4px; }
+
+/* 窄屏：感悟两栏并一栏，输入框收窄 */
+@media (max-width: 640px) {
+  .sense-grid { grid-template-columns: 1fr; }
+  .actual-input { width: 110px; }
+  .archive-ops { width: 100%; }
+  .archive-ops .btn { flex: 1; }
+}
+
+/* 实际行程回填（每天一行）+ 计划外花销（2026-10-28 补） */
+.archive-days { margin: 8px 0 16px; }
+.day-edit-row { padding: 10px 0; border-bottom: 1px dashed var(--border); }
+.day-edit-label { font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+.day-edit-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 12px;
+  font-size: 15px;
+  line-height: 1.55;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  resize: vertical;
+  font-family: inherit;
+}
+.day-edit-input:focus { outline: none; border-color: var(--brand, #2a5fe0); }
+
+.extra-cost-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 6px 0 2px;
+}
+.extra-cost-tip { font-size: 13px; color: var(--ink-3); }
+.extra-name {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 12px;
+  font-size: 15px;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: inherit;
+}
+.extra-name:focus { outline: none; border-color: var(--brand, #2a5fe0); }
+.extra-del { flex-shrink: 0; }
+
+/* 已确认条上的档案提示 + 跳转后闪一下（2026-10-28） */
+.locked-archive-tip { font-size: 13px; color: var(--ink-3); }
+.archive-area.is-flash .archive-card {
+  animation: archiveFlash 1.5s ease;
+}
+@keyframes archiveFlash {
+  0%   { box-shadow: 0 0 0 0 rgba(42, 95, 224, 0); }
+  25%  { box-shadow: 0 0 0 6px rgba(42, 95, 224, 0.20); }
+  100% { box-shadow: 0 0 0 0 rgba(42, 95, 224, 0); }
+}
+
+/* 真实感受一栏（2026-10-28） */
+.sense-solo { margin: 0 0 14px; }
+.sense-solo label { display: block; font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+.sense-solo textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  font-size: 15px;
+  line-height: 1.55;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  resize: vertical;
+  font-family: inherit;
+}
+.sense-solo textarea:focus { outline: none; border-color: var(--brand, #2a5fe0); }

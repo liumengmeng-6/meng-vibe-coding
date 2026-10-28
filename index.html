@@ -10,7 +10,7 @@
        不加的话，浏览器会把旧的 CSS 存在本地反复用，
        结果就是"我明明改了样式，你打开却没变化"。
        注意：这仍然只是本地文件，不联网，离线照常可用。 -->
-  <link rel="stylesheet" href="style.css?v=20261002a">
+  <link rel="stylesheet" href="style.css?v=20261028d">
 
   <!-- 主题抢先应用：必须在 <body> 画出来之前执行，
        否则选了赛博主题的人刷新时会先闪一下白屏再变黑（很难受）。
@@ -121,6 +121,29 @@
         </div>
       </div>
 
+      <!-- 确认方案的二次确认（2026-10-27）
+           和上面的清空确认条同一套样式。这里必须再确认一次：
+           这是【不可逆】的动作 —— 确认后编辑入口全锁，只能重新规划。 -->
+      <div class="confirm-bar confirm-final-bar" id="confirm-plan" role="alert" hidden>
+        <span class="confirm-mark" aria-hidden="true">!</span>
+        <p class="confirm-text">确认后<b>不能再修改</b>这个方案（行程、花费、加的地点都会锁定），
+          并立刻生成总览图。确定吗？</p>
+        <div class="confirm-actions">
+          <button type="button" class="btn btn-primary" id="btn-confirm-plan-yes">确定确认</button>
+          <button type="button" class="btn btn-quiet" id="btn-confirm-plan-no">再想想</button>
+        </div>
+      </div>
+
+      <!-- 重新规划确认（其实是"清空重来"，比清空更重：会连确认状态一起解除） -->
+      <div class="confirm-bar confirm-final-bar" id="confirm-replan" role="alert" hidden>
+        <span class="confirm-mark" aria-hidden="true">!</span>
+        <p class="confirm-text">重新规划会<b>清空当前行程和你添加的所有地点</b>，然后要重新填一遍。确定吗？</p>
+        <div class="confirm-actions">
+          <button type="button" class="btn btn-danger" id="btn-replan-yes">确定重新规划</button>
+          <button type="button" class="btn btn-quiet" id="btn-replan-no">取消</button>
+        </div>
+      </div>
+
       <!-- 纸飞机航线图案（纯装饰，读屏软件会跳过）
            这是一张手写的 SVG 矢量图，不是图片文件，也不来自网络：
            离线照常显示，放大到多宽都清晰，颜色跟着主题自动变。
@@ -220,6 +243,22 @@
                 role="tab" id="tab-trip" aria-selected="false" aria-controls="view-trip">每日行程</button>
         <button type="button" class="view-tab" data-view="cost"
                 role="tab" id="tab-cost" aria-selected="false" aria-controls="view-cost">账本</button>
+        <button type="button" class="view-tab" data-view="overview"
+                role="tab" id="tab-overview" aria-selected="false" aria-controls="view-overview">总览图</button>
+      </div>
+
+      <!-- ---------- 出行工具箱（2026-10-27 新增） ----------
+           用户原话：「能不能接入一个跳转到抖音小红书的链接，像前面进入12306一样，
+           方便用户查询，这个统一放在一个地方，不要太分散」。
+           所以这里把"要跳去别的 App 查"的东西全部集中到这一张卡里，
+           不再往每个地点后面挂一个链接 —— 那种做法很快就会满屏蓝字。
+           关键词用本次行程的城市拼，点开就是对应平台的搜索结果页。 -->
+      <div class="card toolbox-card" id="block-toolbox" hidden>
+        <h2 class="card-title">🧭 出行工具箱</h2>
+        <p class="card-note">要找攻略、比价、看吃住，都从这里跳 —— 用的关键词是<b>你这次行程的城市</b>。
+          下面这些链接都会在新标签打开对应平台，<b>票价/房价以平台显示为准</b>（本页给的只是估算）。</p>
+        <p class="toolbox-kw" id="toolbox-keyword"></p>
+        <div class="toolbox-grid" id="toolbox-grid"></div>
       </div>
 
       <!-- 空状态（Day 8 第 2 周新增）：还没点过「生成方案」时的样子。
@@ -334,8 +373,8 @@
              ③ 花费本身也能改（点花费格的「改」）—— 改完总花费按差额自动重算
                 （用户 2026-10-27 反馈：当天花费估算要可修改，总花费跟着重算）。 -->
         <p class="card-note">「当天大致安排」是给照着走用的，可以直接改 —— 点那一格的<b>「编辑」</b>就行。
-          改的是安排内容，花费不会跟着变（那笔钱按每天固定标准估，跟写了几条安排无关）；
-          但<b>花费本身可以单独改</b> —— 点右边花费格的<b>「改」</b>，填个数字，<b>总花费自动重算</b>。</p>
+          <b>花费也可以单独改</b> —— 点右边花费格的<b>「改」</b>，填个数字，<b>总花费自动重算</b>；
+          改完觉得满意了，点下面的<b>「确认此方案」</b>，一键生成总览图。</p>
         <div class="table-scroll">
           <table class="data-table" id="table-itinerary">
             <thead>
@@ -344,8 +383,55 @@
             <tbody></tbody>
           </table>
         </div>
+
+        <!-- 确认区（2026-10-27 新增）
+             用户要的两件事：改完地点/吃住之后有个「确认此方案」按钮，
+             确认后一键出总览图；并且【确认前必须强调不可回退】。
+             所以警示话写在按钮上面、用醒目样式，而不是点完才弹窗 ——
+             点完再提醒就晚了。 -->
+        <div class="confirm-final" id="confirm-plan-bar" hidden>
+          <p class="confirm-final-warn">
+            <b>⚠️ 确认之后就不能再改了。</b>
+            行程、每天花费、你自己加的地点会全部锁定；想改只能点「重新规划」从头来一遍
+            （那会清空当前行程和你添加的内容）。
+          </p>
+          <button type="button" class="btn btn-primary btn-lg" id="btn-confirm-plan">
+            ✅ 确认此方案，生成总览图
+          </button>
+        </div>
+
+        <!-- 已确认后的状态条：告诉用户"现在是锁定状态"以及两个出口 -->
+        <div class="locked-bar" id="plan-locked-bar" hidden>
+          <p class="locked-text"><b>✅ 方案已确认</b><span id="locked-time"></span>
+            —— 行程已锁定，不能再改。要改只能重新规划。<br>
+            <span class="locked-archive-tip">这份方案已自动存进页面最底部的「📚 旅行档案」，玩回来后去那里回填实际花费就能生成账单图。</span></p>
+          <div class="locked-actions">
+            <button type="button" class="btn btn-primary" id="btn-see-overview">看总览图</button>
+            <button type="button" class="btn btn-ghost" id="btn-goto-archive">📚 打开旅行档案</button>
+            <button type="button" class="btn btn-ghost" id="btn-replan">重新规划</button>
+          </div>
+        </div>
       </div>
       </div><!-- /视图二 每日行程 -->
+
+      <!-- ---------- 视图四：总览图（2026-10-27 新增） ----------
+           整趟旅行画成一张竖长图，可以下载成 PNG 存手机相册。
+           为什么用 Canvas 画而不是截图：截图要用户自己动手、还可能只截到半屏；
+           Canvas 能把"五天里每天都干什么"一次排进一张图，高度按内容自动长。 -->
+      <div class="view" id="view-overview">
+      <div class="card" id="block-overview" hidden>
+        <h2 class="card-title">⑧ 行程总览图</h2>
+        <p class="card-note">一张图看完整个行程：<b>每天去哪、吃什么、怎么走、花多少</b>。
+          点下面的按钮存成图片，手机上放相册里随时翻，不用再一个个页面点。</p>
+        <div class="overview-wrap">
+          <canvas id="overview-canvas" width="1080" height="600"></canvas>
+        </div>
+        <div class="overview-actions">
+          <button type="button" class="btn btn-primary" id="btn-download-overview">⬇ 下载图片（PNG）</button>
+          <span class="overview-hint" id="overview-hint"></span>
+        </div>
+      </div>
+      </div><!-- /视图四 总览图 -->
 
       <!-- ---------- 视图三：账本（Day 13） ---------- -->
       <div class="view" id="view-cost">
@@ -394,6 +480,62 @@
 
   </main>
 
+  <!-- ③½ 旅行档案（独立于上面的视图：有档案才显示，刷新/清空后仍能找到） -->
+  <section id="archive-area" class="archive-area" hidden>
+    <div class="wrap">
+      <div id="block-archives" class="card archive-card">
+        <h2>📚 旅行档案</h2>
+        <p class="card-note">每次点<b>「确认此方案」</b>，这里会自动存一份档案。玩回来后打开档案，
+          把<b>实际花销</b>填进去、写上感悟，就能生成一张<b>「账单版总览图」</b>——一次旅行的完整记录。</p>
+        <p class="card-note">档案和图片都<b>只存在你本机浏览器里</b>，不上传网络；换设备或清浏览器数据会看不到。</p>
+        <div id="archives-list"></div>
+      </div>
+
+      <div id="block-archive-editor" class="card archive-card" hidden>
+        <h2 id="archive-editor-title">账单回填</h2>
+        <p class="card-note">下面按天列出<b>计划安排</b>。玩回来可以把每天<b>实际去了哪、吃了啥</b>直接改上去
+          （多项用<b>「；」</b>隔开，也可以加你临时发现的好地方）；不想动的天留着就行。</p>
+        <div id="archive-days-list" class="archive-days"></div>
+
+        <p class="card-note">花费也一样：把每项<b>实际花了多少</b>填到右边的框里，没改的项按计划算，
+          <b>没花的项填 0</b>；计划外的花销（纪念品、补票之类）可以自己加一项。</p>
+        <div id="archive-actual-list" class="actual-list"></div>
+        <div class="extra-cost-head">
+          <span class="extra-cost-tip">计划外的花销</span>
+          <button type="button" id="btn-add-extra-cost" class="btn btn-ghost btn-sm">＋ 加一项</button>
+        </div>
+        <div id="archive-extra-list" class="actual-list"></div>
+
+        <div class="sense-col sense-solo">
+          <label for="archive-thoughts">💭 真实感受</label>
+          <textarea id="archive-thoughts" rows="2" placeholder="这趟玩下来整体怎么样？累不累、值不值、下次还想不想来…"></textarea>
+        </div>
+        <div class="sense-grid">
+          <div class="sense-col">
+            <label for="archive-rec">💚 推荐哪些地方</label>
+            <textarea id="archive-rec" rows="3" placeholder="例：xyz 古镇傍晚的河边绝了，一定去；xx 面馆 8 块钱吃到扶墙…"></textarea>
+          </div>
+          <div class="sense-col">
+            <label for="archive-avoid">⚠️ 避雷哪些地方</label>
+            <textarea id="archive-avoid" rows="3" placeholder="例：xx 景点门票不值；周末 xx 街人挤人，别去…"></textarea>
+          </div>
+        </div>
+        <div class="archive-actions">
+          <button type="button" id="btn-save-actual" class="btn">💾 保存回填</button>
+          <button type="button" id="btn-bill-image" class="btn btn-primary">🎨 生成账单总览图</button>
+          <button type="button" id="btn-close-archive" class="btn btn-ghost">关闭</button>
+        </div>
+        <div id="bill-wrap" class="overview-wrap" hidden>
+          <canvas id="bill-canvas" width="1080" height="600" aria-label="账单总览图"></canvas>
+          <div class="overview-actions">
+            <button type="button" id="btn-download-bill" class="btn btn-primary">⬇️ 保存账单图</button>
+          </div>
+          <p class="overview-hint" id="bill-hint">点「保存账单图」会下载一张 PNG 长图，可直接发给朋友或存相册。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- ④ 底部声明 -->
   <footer class="site-footer">
     <div class="wrap">
@@ -404,7 +546,7 @@
 
   <!-- 逻辑脚本：必须是普通 script（不能用 type="module"），否则双击打开时不会执行。
        末尾的 ?v= 是版本号，作用同上面的 style.css：改了脚本你才看得到变化。 -->
-  <script src="app.js?v=20261002a" defer></script>
+  <script src="app.js?v=20261028d" defer></script>
 
 </body>
 </html>

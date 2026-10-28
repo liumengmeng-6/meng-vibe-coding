@@ -1339,40 +1339,46 @@ function buildPlans(input) {
   }
 
   /* ---------- 两套方案的关系：省了多少、代价是什么 ---------- */
-  if (plans.length === 2) {
-    var cheapPlan = plans[0];
-    var valuePlan = plans[1];
-    var savedMoney = valuePlan.total - cheapPlan.total;      // 最省方案便宜多少
-    var extraHours = 0;
-
-    for (var m = 0; m < cheapPlan.legs.length; m++) {
-      extraHours += cheapPlan.legs[m].chosen.hours - valuePlan.legs[m].chosen.hours;
-    }
-    extraHours = round1(extraHours);
-
-    // 两套完全一样的话，得如实告诉用户，不能假装有区别
-    var identical = savedMoney === 0 && extraHours === 0;
-
-    cheapPlan.compare = {
-      identical: identical,
-      savedMoney: savedMoney,
-      extraHours: extraHours,
-      text: identical
-        ? '这套和「性价比方案」在交通上完全相同——这几段路能选的方式里，' +
-          '没有"多花时间能省下钱"的选项。'
-        : ('比「性价比方案」省 ¥' + savedMoney + '，代价是多花约 ' + extraHours + ' 小时在路上。')
-    };
-    valuePlan.compare = {
-      identical: identical,
-      savedMoney: savedMoney,
-      extraHours: extraHours,
-      text: identical
-        ? '这套和「最省方案」在交通上完全相同。'
-        : ('比「最省方案」多花 ¥' + savedMoney + '，换回约 ' + extraHours + ' 小时的自由时间。')
-    };
-  }
+  refreshCompare(plans);
 
   return plans;
+}
+
+/* 两套方案的「差多少」说明。两个时机都要算：
+   ① buildPlans 刚生成时；② 用户在卡片上手动换某段的交通方式后
+   （换完两套可能变得一样，也可能差距拉大 —— 说明文字必须跟着真实数字走）。 */
+function refreshCompare(plans) {
+  if (plans.length !== 2) return;
+  var cheapPlan = plans[0];
+  var valuePlan = plans[1];
+  var savedMoney = valuePlan.total - cheapPlan.total;      // 最省方案便宜多少
+  var extraHours = 0;
+
+  for (var m = 0; m < cheapPlan.legs.length; m++) {
+    extraHours += cheapPlan.legs[m].chosen.hours - valuePlan.legs[m].chosen.hours;
+  }
+  extraHours = round1(extraHours);
+
+  // 两套完全一样的话，得如实告诉用户，不能假装有区别
+  var identical = savedMoney === 0 && extraHours === 0;
+
+  cheapPlan.compare = {
+    identical: identical,
+    savedMoney: savedMoney,
+    extraHours: extraHours,
+    text: identical
+      ? '这套和「性价比方案」在交通上完全相同——这几段路能选的方式里，' +
+        '没有"多花时间能省下钱"的选项。'
+      : ('比「性价比方案」省 ¥' + savedMoney + '，代价是多花约 ' + extraHours + ' 小时在路上。')
+  };
+  valuePlan.compare = {
+    identical: identical,
+    savedMoney: savedMoney,
+    extraHours: extraHours,
+    text: identical
+      ? '这套和「最省方案」在交通上完全相同。'
+      : ('比「最省方案」多花 ¥' + savedMoney + '，换回约 ' + extraHours + ' 小时的自由时间。')
+  };
 }
 
 
@@ -1618,6 +1624,8 @@ var selectedCities = [];
 var lastInput = null;
 var lastPlans = null;
 var activePlanId = null;
+/* 方案区的一次性提示（换段被拒时显示原因）。renderPlans 画完即清。 */
+var planNotice = null;
 
 /* 城市之间排行程时，怎么安排"当天大致安排"
    改进（Day 7 用户反馈后）：
@@ -1795,6 +1803,18 @@ function renderDetailCell(td, row) {
     badge.textContent = '已改';
     badge.title = '这一天的安排你改过';
     td.appendChild(badge);
+  }
+
+  /* 方案已确认 → 不画「编辑」按钮，换成一句锁定说明。
+     为什么不是画出来再灰掉：CSS 只能让人点不到，脚本/键盘仍能触发；
+     要在结构上就没有这个入口，才真的"改不了"（2026-10-27 用户要求不可逆）。 */
+  if (planConfirmed) {
+    var lockTag = document.createElement('span');
+    lockTag.className = 'lock-tag';
+    lockTag.textContent = '已锁定';
+    lockTag.title = '方案已确认，不能再改安排；要改请点「重新规划」';
+    td.appendChild(lockTag);
+    return;
   }
 
   // 「编辑」按钮
@@ -1992,6 +2012,7 @@ function readEditorItems(row) {
    若原样存下来，只读态会看到"；；"这种空条。
    过滤在【存之前】做，这样"存进存档的东西"永远是可以直接显示的。 */
 function commitRowEdit(row, items) {
+  if (planConfirmed) return;      // 方案已确认 → 编辑入口全部锁死（2026-10-27）
   var key = rowKeyOf(row);
 
   var cleaned = items.filter(function (s) { return String(s).trim() !== ''; })
@@ -2020,6 +2041,7 @@ function commitRowEdit(row, items) {
    写完不只重画行程表 —— 总账、预算结论、方案卡片全都按新数重算
    （用户反馈的原话就是"后面也要重新计算总花费"）。 */
 function commitCostEdit(row, rawValue) {
+  if (planConfirmed) return;      // 方案已确认 → 花费也不能改
   var key = rowKeyOf(row);
   var v = String(rawValue).trim();
 
@@ -2117,23 +2139,10 @@ function cssEscape(s) {
        2. 把用户自己添加的地点【也排进去】—— 内置安排先排，自填的接在后面
        3. 一天排几条：按"每天大约排 2 条"分配；某天实在没内容就如实写"这天还没安排"
      注意：自填地点的花费【不进总合计】（和美食清单的规矩一致，防止重复计算）。 */
-function renderItinerary(split, input) {
-  var tbody = document.getElementById('table-itinerary').querySelector('tbody');
-  tbody.innerHTML = '';
-
-  /* Day 15：重画之前先记下"这次一共有哪些行"，画完再回头核对。
-     为什么要核对：editingRowKey 可能指向【已经不存在的行】——
-     比如用户正编辑"成都第 3 天"，此时改了天数、或切了方案，
-     就没有"成都第 3 天"这一行了。
-     若不处理，renderDetailCell 里 `editingRowKey === key` 永远不成立，
-     用户再也进不去编辑态：点「编辑」没反应，还不报错（查起来很费劲）。
-
-     ⚠️ 不能在这里直接 `editingRowKey = null` —— 那会把"点编辑"本身也一起干掉：
-        点「编辑」的动作就是【先设 editingRowKey、再重画】，
-        一进来就清掉，编辑态永远打不开（这个错真犯过一次）。
-        所以只能"画完之后按结果核对"，不能"开工前一律清空"。 */
-  var liveKeys = {};
-
+/* 把「这套方案 + 这份输入」展开成每日行 —— 纯数据，不碰 DOM。
+   2026-10-27 抽出来：总览图要把同一批行画进 Canvas，
+   不抽的话只能去读页面表格上的文字（改个样式就全乱，还带着"编辑""改"这类按钮字）。 */
+function buildItineraryRows(split, input) {
   // ① 把"占整天"的交通段，按顺序插进行程里
   //    规则：占整天的段单独成行；不占整天的段，先进城再游玩
   var rows = [];
@@ -2249,6 +2258,28 @@ function renderItinerary(split, input) {
       });
     }
   }
+
+  return rows;
+}
+
+function renderItinerary(split, input) {
+  var tbody = document.getElementById('table-itinerary').querySelector('tbody');
+  tbody.innerHTML = '';
+
+  /* Day 15：重画之前先记下"这次一共有哪些行"，画完再回头核对。
+     为什么要核对：editingRowKey 可能指向【已经不存在的行】——
+     比如用户正编辑"成都第 3 天"，此时改了天数、或切了方案，
+     就没有"成都第 3 天"这一行了。
+     若不处理，renderDetailCell 里 `editingRowKey === key` 永远不成立，
+     用户再也进不去编辑态：点「编辑」没反应，还不报错（查起来很费劲）。
+
+     ⚠️ 不能在这里直接 `editingRowKey = null` —— 那会把"点编辑"本身也一起干掉：
+        点「编辑」的动作就是【先设 editingRowKey、再重画】，
+        一进来就清掉，编辑态永远打不开（这个错真犯过一次）。
+        所以只能"画完之后按结果核对"，不能"开工前一律清空"。 */
+  var liveKeys = {};
+
+  var rows = buildItineraryRows(split, input);
 
   for (var r = 0; r < rows.length; r++) {
     var row = rows[r];
@@ -2447,6 +2478,16 @@ function renderCostCell(td, row) {
     costBadge.textContent = '已改';
     costBadge.title = '这一天的花费你改过（标准 ¥' + defaultDayCost() + '/天）';
     td.appendChild(costBadge);
+  }
+
+  /* 已确认 → 花费也不给「改」的入口（同安排格的道理：结构上就没有，才真改不了） */
+  if (planConfirmed) {
+    var lockTag2 = document.createElement('span');
+    lockTag2.className = 'lock-tag';
+    lockTag2.textContent = '已锁定';
+    lockTag2.title = '方案已确认，花费不能再改；要改请点「重新规划」';
+    td.appendChild(lockTag2);
+    return;
   }
 
   var costBtn = document.createElement('button');
@@ -2787,6 +2828,16 @@ function renderPlans(plans, activeId) {
   var box = document.getElementById('plans-body');
   box.innerHTML = '';
 
+  /* 一次性提示（换段被拒时用）。画完即清，下次重画不再出现。 */
+  if (planNotice) {
+    var notice = document.createElement('p');
+    notice.className = 'plan-notice';
+    notice.setAttribute('role', 'alert');
+    notice.textContent = planNotice;
+    box.appendChild(notice);
+    planNotice = null;
+  }
+
   for (var i = 0; i < plans.length; i++) {
     var p = plans[i];
     var card = document.createElement('div');
@@ -2797,10 +2848,17 @@ function renderPlans(plans, activeId) {
     var name = document.createElement('h3');
     name.className = 'plan-name';
     name.textContent = p.name;
+    head.appendChild(name);
+    /* 用户手动换过段 → 挂标记，让"这还是不是系统原方案"一目了然 */
+    if (p.customized) {
+      var customBadge = document.createElement('span');
+      customBadge.className = 'plan-badge';
+      customBadge.textContent = '已手动调整';
+      head.appendChild(customBadge);
+    }
     var totalEl = document.createElement('span');
     totalEl.className = 'plan-total';
     totalEl.textContent = '¥' + p.total;
-    head.appendChild(name);
     head.appendChild(totalEl);
     card.appendChild(head);
 
@@ -2809,15 +2867,56 @@ function renderPlans(plans, activeId) {
     tag.textContent = p.tagline;
     card.appendChild(tag);
 
-    // 每一段坐什么
+    // 每一段坐什么。这一段有两种以上走法 → 给一个下拉，想换哪段换哪段
     var legsUl = document.createElement('ul');
     legsUl.className = 'plan-legs';
     for (var k = 0; k < p.legs.length; k++) {
       var leg = p.legs[k];
       var ch = leg.chosen;
       var li = document.createElement('li');
-      li.textContent = leg.from + ' → ' + leg.to + '：' + ch.mode +
-        '（' + ch.hours + ' 小时，¥' + ch.price + '）';
+
+      var legName = document.createElement('span');
+      legName.textContent = leg.from + ' → ' + leg.to + '：';
+      li.appendChild(legName);
+
+      var opts = leg.estimate.options;
+      if (opts.length > 1) {
+        var sel = document.createElement('select');
+        sel.className = 'leg-swap';
+        sel.setAttribute('aria-label',
+          leg.from + ' 到 ' + leg.to + ' 的交通方式（当前' + ch.mode + '）');
+        for (var o = 0; o < opts.length; o++) {
+          var optEl = document.createElement('option');
+          optEl.value = opts[o].key;
+          optEl.textContent = opts[o].mode + '（' + opts[o].hours + ' 小时，¥' + opts[o].price + '）';
+          if (opts[o].key === ch.key) optEl.selected = true;
+          sel.appendChild(optEl);
+        }
+        /* 闭包坑（Day 7/15/花费格同款）：这里必须用当前 li 的 k/p，
+           所以回调写在循环体里、通过 sel 自身取值，不引用循环变量 */
+        sel.addEventListener('change', function () {
+          swapLegOptionBySelect(this);
+        });
+        /* 已确认 → 下拉真的禁用（光靠 CSS 灰掉挡不住键盘操作） */
+        if (planConfirmed) {
+          sel.disabled = true;
+          sel.title = '方案已确认，不能再改交通方式；要改请点「重新规划」';
+        }
+        li.appendChild(sel);
+      } else {
+        var only = document.createElement('span');
+        only.textContent = ch.mode + '（' + ch.hours + ' 小时，¥' + ch.price + '）';
+        li.appendChild(only);
+      }
+
+      /* 估算标记：这段是"拍脑袋兜底"出来的（城市没坐标），要诚实 */
+      if (ch.estimated) {
+        var estMark = document.createElement('span');
+        estMark.className = 'plan-est-mark';
+        estMark.textContent = '估算';
+        estMark.title = ch.label || '该段无精确数据，按同类路线估算';
+        li.appendChild(estMark);
+      }
       legsUl.appendChild(li);
     }
     card.appendChild(legsUl);
@@ -2836,6 +2935,13 @@ function renderPlans(plans, activeId) {
       card.appendChild(cmp);
     }
 
+    /* 价格口径声明：全程估算，实价自查（2026-10-27 用户定的口径） */
+    var priceNote = document.createElement('p');
+    priceNote.className = 'plan-note';
+    priceNote.textContent = '以上票价均为估算；实际以 12306 / 航司 / 客运 App 为准。' +
+      (hasSwappableLegs(p) ? '想换某段的交通方式，直接改那段的下拉就行。' : '');
+    card.appendChild(priceNote);
+
     // 选用按钮
     var btn = document.createElement('button');
     btn.type = 'button';
@@ -2846,15 +2952,117 @@ function renderPlans(plans, activeId) {
       var id = this.getAttribute('data-plan');
       switchPlan(id);
     });
+    /* 已确认 → 不能再换方案（换方案等于把确认好的行程改掉） */
+    if (planConfirmed) {
+      btn.disabled = true;
+      btn.title = '方案已确认，不能再换；要改请点「重新规划」';
+    }
     card.appendChild(btn);
 
     box.appendChild(card);
   }
 }
 
+/* 这套方案里有没有"能换"的段（有两种以上走法的段）——决定声明行怎么写 */
+function hasSwappableLegs(plan) {
+  for (var i = 0; i < plan.legs.length; i++) {
+    if (plan.legs[i].estimate.options.length > 1) return true;
+  }
+  return false;
+}
+
+/* 下拉的 change 回调：从控件本身反查是哪套方案哪一段，避开循环变量闭包坑 */
+function swapLegOptionBySelect(sel) {
+  var li = sel.closest('li');
+  var card = sel.closest('.plan-card');
+  if (!li || !card) return;
+  var cardEl = card;
+  var box = document.getElementById('plans-body');
+  var cardIndex = Array.prototype.indexOf.call(box.querySelectorAll('.plan-card'), cardEl);
+  var legIndex = Array.prototype.indexOf.call(card.querySelectorAll('.plan-legs > li'), li);
+  if (cardIndex < 0 || legIndex < 0 || !lastPlans || !lastPlans[cardIndex]) return;
+  swapLegOption(lastPlans[cardIndex].id, legIndex, sel.value);
+}
+
+/* 用户在方案卡上把某段的交通方式换成另一种（2026-10-27 用户反馈：
+   "我还需要一个混合式的，可以在两种方案里面进行替换，飞机换高铁这样"）。
+   只动这一段：整段行程分配、总账、预算对比全部按新组合重算。
+   换慢车可能导致"能玩天数不够"（E4）—— 那种情况不应用，回滚并说明原因。
+   价格口径（用户定的）：这里给的只是估算，实价用户自己上 12306 / 航司 App 查。 */
+function swapLegOption(planId, legIdx, optionKey) {
+  if (!lastInput || !lastPlans) return;
+  if (planConfirmed) return;      // 已确认 → 不能换方案/换交通方式
+
+  var plan = null;
+  for (var i = 0; i < lastPlans.length; i++) {
+    if (lastPlans[i].id === planId) plan = lastPlans[i];
+  }
+  if (!plan) return;
+  var leg = plan.legs[legIdx];
+  if (!leg) return;
+
+  var target = null;
+  for (var j = 0; j < leg.estimate.options.length; j++) {
+    if (leg.estimate.options[j].key === optionKey) target = leg.estimate.options[j];
+  }
+  /* 没这个选项、或选的就是当前这项 → 无事发生（下拉被拨回去也不算"改动"） */
+  if (!target || target.key === leg.chosen.key) return;
+
+  var oldChosen = leg.chosen;
+  leg.chosen = target;
+
+  var keys = [];
+  for (var k = 0; k < plan.legs.length; k++) keys.push(plan.legs[k].chosen.key);
+
+  var split = splitDaysWithModes(lastInput.fromCity, lastInput.cities, lastInput.days, keys);
+  if (!split.ok) {
+    /* 换了更慢的车 → 在路上占的天变多 → 能玩天数不够分。不应用，回滚。 */
+    leg.chosen = oldChosen;
+    planNotice = '这次替换没有生效：换成' + target.mode + '后' + split.message +
+      '。已还原为' + oldChosen.mode + '。';
+    renderPlans(lastPlans, activePlanId);
+    return;
+  }
+
+  plan.legs = split.legs;
+  plan.split = split;
+  plan.cost = calcCost(split, lastInput.days);
+  plan.total = plan.cost.total;
+  plan.transitDays = split.transitDays;
+  plan.playableDays = split.playableDays;
+  plan.customized = true;   // 卡片挂「已手动调整」，别让用户误以为还是系统原方案
+
+  refreshCompare(lastPlans);
+  /* 理由同 switchPlan：行程整批要重画，编辑态不该跨过去 */
+  exitRowEditing();
+
+  if (activePlanId === planId) {
+    /* 换的就是正在看的那套 → 下面的行程 / 交通明细 / 账本 / 预算全部跟着动。
+       Day 14 的教训：这里必须无条件全部重画，不能只画"当前视图里的那几块"。 */
+    var chosenKeys = [];
+    for (var k2 = 0; k2 < plan.legs.length; k2++) chosenKeys.push(plan.legs[k2].chosen.key);
+
+    var verdict = compareBudget(plan.cost, lastInput.budget, plan.legs, {
+      plan: plan.split.plan,
+      totalDays: lastInput.days,
+      cheaperPlan: cheaperOf(lastPlans, plan)
+    });
+
+    renderPlans(lastPlans, activePlanId);
+    renderItinerary(plan.split, lastInput);
+    renderTransport(plan.split, chosenKeys);
+    renderCost(plan.cost);
+    renderBudget(verdict);
+  } else {
+    /* 换的是没在看的那套 → 只重画卡片（总价、对比文字都在卡片上） */
+    renderPlans(lastPlans, activePlanId);
+  }
+}
+
 /* 切换整体方案：只重渲染下面的结果，不重新校验输入 */
 function switchPlan(planId) {
   if (!lastInput || !lastPlans) return;
+  if (planConfirmed) return;      // 已确认 → 不能换方案/换交通方式
 
   var picked = null;
   for (var i = 0; i < lastPlans.length; i++) {
@@ -3023,7 +3231,7 @@ function renderHighlights(cities) {
         //   内置推荐删不掉 —— 那是写死在代码里的数据，删了下次刷新又回来，没意义
         var td4 = document.createElement('td');
         td4.className = 'col-op';
-        if (item.self) {
+        if (item.self && !planConfirmed) {   // 已确认 → 连删除入口都不画
           var delBtn = document.createElement('button');
           delBtn.type = 'button';
           delBtn.className = 'btn-del';
@@ -3101,6 +3309,15 @@ function renderHighlights(cities) {
 /* 生成"自己添加地点"的小表单 —— 用 addEventListener 绑定，不用行内 onclick
    （TECH_DESIGN 没禁止，但行内 onclick 在 file:// 下也不算安全，统一走监听器） */
 function buildAddForm(city) {
+  /* 方案已确认 → 不给添加表单，换成一句说明。
+     否则用户打完字点「添加」没反应，会以为功能坏了（2026-10-27 锁定要求）。 */
+  if (planConfirmed) {
+    var lockedNote = document.createElement('div');
+    lockedNote.className = 'empty-note';
+    lockedNote.textContent = '方案已确认，不能再添加地点；要改请点「重新规划」。';
+    return lockedNote;
+  }
+
   var wrap = document.createElement('div');
   wrap.className = 'self-add';
 
@@ -3141,6 +3358,7 @@ function buildAddForm(city) {
   selfAdded[city] = selfAdded[city] || [];
 
   addBtn.addEventListener('click', function () {
+    if (planConfirmed) return;      // 已确认 → 不能再往清单里加东西
     var name = nameInput.value.trim();
     if (name === '') {
       nameInput.focus();
@@ -3498,6 +3716,7 @@ function syncSelfAdded(city) {
    idx 是这个城市自填数组里的位置（从 0 开始）
    删完立刻同步清单、行程、本地存储三处 */
 function removeSelfAdded(city, idx) {
+  if (planConfirmed) return;      // 方案已确认 → 不能删已确认的清单
   var list = selfAdded[city];
   if (!list || idx < 0 || idx >= list.length) return;
 
@@ -3784,6 +4003,10 @@ function doGenerate(input, token) {
   renderCost(defaultPlan.cost);
   renderBudget(verdict);
   renderHighlights(input.cities);
+  /* 2026-10-27 新增：工具箱按这次的城市重画；确认状态按"签名"重新核对
+     （换城市/改天数/换方案都会让旧签名失效 → 自动解锁，不会把人锁死） */
+  renderToolbox(input);
+  syncConfirmedWithState();
 
   /* 计算其实早就跑完了（本地计算是毫秒级）。
      但转圈不能"闪一下就没" —— 那样比不显示还难看。
@@ -3838,8 +4061,8 @@ function doGenerate(input, token) {
 
 /* 结果区的六块。定义在这里（而不是函数内部），
    因为"加载时收起"、"加载完错峰淡入"两个地方都要用它。 */
-var BLOCK_IDS = ['block-plans', 'block-itinerary', 'block-transport',
-                 'block-cost', 'block-budget', 'block-highlights'];
+var BLOCK_IDS = ['block-toolbox', 'block-plans', 'block-itinerary', 'block-transport',
+                 'block-cost', 'block-budget', 'block-highlights', 'block-overview'];
 
 /* ---------- E0. 视图切换（Day 13 新增） ----------
 
@@ -3860,9 +4083,11 @@ var BLOCK_IDS = ['block-plans', 'block-itinerary', 'block-transport',
    属于"用了大炮打蚊子"。 */
 
 var VIEWS = {
-  plan: ['block-plans', 'block-transport'],
-  trip: ['block-itinerary'],
-  cost: ['block-cost', 'block-budget', 'block-highlights']
+  plan: ['block-toolbox', 'block-plans', 'block-transport'],
+  trip: ['block-toolbox', 'block-itinerary'],
+  cost: ['block-toolbox', 'block-cost', 'block-budget', 'block-highlights'],
+  /* 2026-10-27：第 4 个视图 —— 把整趟行程画成一张可下载的图 */
+  overview: ['block-toolbox', 'block-overview']
 };
 
 /* 当前在哪个视图。默认"整体方案"—— 用户生成完最该先看的就是挑哪套。 */
@@ -3963,6 +4188,9 @@ function repaintForView(view) {
   if (ids.indexOf('block-transport') >= 0) { renderTransport(picked.split, chosenKeys); }
   if (ids.indexOf('block-cost') >= 0) { renderCost(picked.cost); }
   if (ids.indexOf('block-highlights') >= 0) { renderHighlights(lastInput.cities); }
+  if (ids.indexOf('block-toolbox') >= 0) { renderToolbox(lastInput); }
+  /* 总览图：每次切到这屏都按当前方案重画一遍（成本很低，但能保证数据是新的） */
+  if (ids.indexOf('block-overview') >= 0) { drawOverview(); }
   if (ids.indexOf('block-budget') >= 0) {
     var verdict = compareBudget(picked.cost, lastInput.budget, picked.legs, {
       plan: picked.split.plan,
@@ -4010,6 +4238,12 @@ function hideAllBlocks() {
   document.getElementById('block-loading').hidden = true;
   document.getElementById('block-empty').hidden = true;
   document.getElementById('block-error').hidden = true;   // Day 13
+  /* 确认区与锁定条挂在「每日行程」卡片里，不属于任何"块"，
+     所以这里要单独收 —— 否则清空之后它们会孤零零留在页面上。 */
+  var cbar = document.getElementById('confirm-plan-bar');
+  if (cbar) cbar.hidden = true;
+  var lbar = document.getElementById('plan-locked-bar');
+  if (lbar) lbar.hidden = true;
   /* 视图标签栏也跟着藏：空/加载/错误这三种状态下都没有"多个视图"可言，
      留着三个按钮可点却点不出东西，是骗人。 */
   document.getElementById('view-tabs').hidden = true;
@@ -4206,6 +4440,1621 @@ function updateOrderExample() {
                    '系统会算「' + from + '→成都→重庆→' + from + '」的完整往返。';
 }
 
+/* ============================================================
+   ★ 出行工具箱（2026-10-27 用户反馈）
+
+   用户原话：「能不能接入一个跳转到抖音小红书的链接，像前面进入 12306 一样，
+   方便用户查询，这个统一放在一个地方，不要太分散」。
+
+   所以：
+     · 全部集中在结果区顶部的一张卡里（block-toolbox），四个视图都显示；
+     · 关键词用【本次行程的城市】现场拼，用户不用自己再打一遍；
+     · 一律 target=_blank + rel="noopener noreferrer"（AC22）；
+     · 这些链接是"用户点了才跳"，页面本身不发任何网络请求 —— AC14 断网可用不受影响；
+       但 AC15「真实地图是全站唯一联网点」这句口径要改成"站内不主动联网，
+       只有用户主动点击的指路外链"，白名单同步更新（preflight A4 会盯这件事）。
+   ============================================================ */
+
+/* 每一项：id / 名称 / 说明 / 关键词后缀 / 图标 / 拼 URL 的方法 */
+var TOOLBOX_LINKS = [
+  {
+    id: 'train', icon: '🚄', name: '火车票 · 12306', desc: '官方唯一售票站，票价余票最准',
+    kind: '', url: function () { return URL_12306; }
+  },
+  {
+    id: 'dy', icon: '🎬', name: '攻略 · 抖音', desc: '真实游客拍的短视频',
+    kind: '旅游',
+    url: function (kw) { return 'https://www.douyin.com/search/' + encodeURIComponent(kw); }
+  },
+  {
+    id: 'xhs', icon: '📕', name: '攻略 · 小红书', desc: '图文攻略、避坑清单',
+    kind: '旅游攻略',
+    url: function (kw) { return 'https://www.xiaohongshu.com/search_result?keyword=' + encodeURIComponent(kw); }
+  },
+  {
+    id: 'bili', icon: '📺', name: '攻略 · B 站', desc: '长视频、深度路线',
+    kind: '旅游',
+    url: function (kw) { return 'https://search.bilibili.com/all?keyword=' + encodeURIComponent(kw); }
+  },
+  {
+    id: 'amap', icon: '🗺', name: '地图 · 高德', desc: '看距离、路线、周边',
+    kind: '',
+    url: function (kw) {
+      return 'https://uri.amap.com/search?keyword=' + encodeURIComponent(kw) + '&callnative=1';
+    }
+  },
+  {
+    id: 'meituan', icon: '🍜', name: '美食 · 美团', desc: '找吃的、看人均',
+    kind: '美食',
+    url: function (kw) { return 'https://www.meituan.com/s/' + encodeURIComponent(kw); }
+  },
+  {
+    id: 'ctrip', icon: '🛏', name: '住宿 · 携程', desc: '比酒店、看真实房价',
+    kind: '酒店',
+    url: function (kw) { return 'https://hotels.ctrip.com/hotels/list?cityName=' + encodeURIComponent(kw); }
+  }
+];
+
+/* 画工具箱。城市名来自用户输入 → 全程 textContent 拼，绝不用 innerHTML（防注入） */
+function renderToolbox(input) {
+  var kwEl = document.getElementById('toolbox-keyword');
+  var grid = document.getElementById('toolbox-grid');
+  if (!kwEl || !grid) return;
+  grid.innerHTML = '';
+
+  if (!input || !input.cities || input.cities.length === 0) {
+    kwEl.textContent = '';
+    return;
+  }
+
+  var cities = input.cities;
+  var cityKw = cities[0];                       // 关键词以第一个目的城市为主
+  kwEl.textContent = '查询城市：' + cities.join(' · ') +
+    (cities.length > 1 ? '（按第一个城市搜，想搜别的就改平台里的搜索框）' : '');
+
+  for (var i = 0; i < TOOLBOX_LINKS.length; i++) {
+    var it = TOOLBOX_LINKS[i];
+    var kw = it.kind ? (cityKw + ' ' + it.kind) : cityKw;
+
+    var a = document.createElement('a');
+    a.className = 'tool-btn';
+    a.href = it.url(kw);
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';              // AC22：新窗口打开必须带这个
+    a.setAttribute('data-tool', it.id);
+
+    var ic = document.createElement('span');
+    ic.className = 'tool-icon';
+    ic.setAttribute('aria-hidden', 'true');
+    ic.textContent = it.icon;
+
+    var body = document.createElement('span');
+    body.className = 'tool-body';
+    var nm = document.createElement('b');
+    nm.textContent = it.name;
+    var ds = document.createElement('small');
+    ds.textContent = it.desc;
+    body.appendChild(nm);
+    body.appendChild(ds);
+
+    a.appendChild(ic);
+    a.appendChild(body);
+    grid.appendChild(a);
+  }
+}
+
+/* ============================================================
+   ★ 方案确认 + 锁定（2026-10-27 用户反馈）
+
+   「用户在手动添加修改完游玩地点、吃住方面的东西过后有一个确认此方案的按钮」
+   「确认之前一定要强调，因为一经生成后就不可再修改了，只能从头重新添加修改」
+
+   实现要点：
+     · 确认状态存 localStorage，但带【签名】（城市链 + 天数 + 当前方案 id）：
+       换了一批城市 / 改了天数 / 换了方案，签名变了 → 锁定自动失效，不会把人锁死。
+     · 锁定用【一个 body class + CSS 灰掉所有编辑入口】实现，而不是在十几处渲染里
+       逐个别写 if —— 那种写法漏一个就留一个后门，而且很难测全。
+       同时在几个写入口再各加一道 if 防御（键盘/脚本调用也拦得住）。
+   ============================================================ */
+
+var CONFIRMED_KEY = 'meng-vibe-coding:confirmed';
+var planConfirmed = false;
+var confirmedAtText = '';
+
+function planSignature() {
+  if (!lastInput) return '';
+  return lastInput.fromCity + '>' + lastInput.cities.join('>') +
+    '|' + lastInput.days + '|' + (activePlanId || '');
+}
+
+function readConfirmed() {
+  try {
+    if (typeof localStorage === 'undefined') return null;
+    var raw = localStorage.getItem(CONFIRMED_KEY);
+    if (!raw) return null;
+    var o = JSON.parse(raw);
+    return (o && o.sig) ? o : null;
+  } catch (e) { return null; }
+}
+
+function writeConfirmed() {
+  confirmedAtText = new Date().toLocaleString('zh-CN', { hour12: false });
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(CONFIRMED_KEY, JSON.stringify({
+      sig: planSignature(), at: confirmedAtText
+    }));
+  } catch (e) { /* 存不了也不影响本次会话的锁定 */ }
+}
+
+function clearConfirmed() {
+  planConfirmed = false;
+  confirmedAtText = '';
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.removeItem(CONFIRMED_KEY);
+  } catch (e) {}
+}
+
+/* 每次生成/切方案后调用：签名对得上才算"已确认"，否则一律解锁 */
+function syncConfirmedWithState() {
+  var saved = readConfirmed();
+  if (saved && saved.sig === planSignature()) {
+    planConfirmed = true;
+    confirmedAtText = saved.at || '';
+  } else {
+    planConfirmed = false;
+    confirmedAtText = '';
+    if (saved) clearConfirmed();      // 签名变了 → 顺手把过期记录删掉
+  }
+  applyLockUI();
+}
+
+/* 把锁定状态反映到界面上：
+     ① body 加 is-locked → CSS 灰掉所有编辑入口
+     ② 每日行程卡片：确认按钮 ↔ 已锁定状态条 二选一 */
+function applyLockUI() {
+  document.body.classList.toggle('is-locked', planConfirmed);
+
+  var bar = document.getElementById('confirm-plan-bar');
+  var locked = document.getElementById('plan-locked-bar');
+  var lockedTime = document.getElementById('locked-time');
+
+  if (bar) bar.hidden = planConfirmed;
+  if (locked) locked.hidden = !planConfirmed;
+  if (lockedTime) lockedTime.textContent = confirmedAtText ? '（' + confirmedAtText + '）' : '';
+}
+
+/* 用户点「确认此方案」→ 先出二次确认条（不可逆的动作必须有第二次机会） */
+function askConfirmPlan() {
+  var bar = document.getElementById('confirm-plan');
+  if (!bar) return;
+  bar.hidden = false;
+  if (bar.scrollIntoView) bar.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function cancelConfirmPlan() {
+  var bar = document.getElementById('confirm-plan');
+  if (bar) bar.hidden = true;
+}
+
+/* 真正确认：锁定 + 存档 + 画总览图 + 跳到总览图视图 */
+function doConfirmPlan() {
+  cancelConfirmPlan();
+  planConfirmed = true;
+  writeConfirmed();
+  archiveCurrentPlan();   // 确认那一刻存一份旅行档案（账单回填的"计划"底子）
+  applyLockUI();
+
+  /* 锁上之后把界面按锁定态重画一遍（编辑按钮那些靠 CSS 灰掉，
+     但方案卡上的下拉要真的 disabled 掉，否则键盘还能改） */
+  repaintAllForLock();
+
+  switchView('overview');
+  drawOverview();
+  scrollToResults();
+}
+
+/* 锁定后重画：方案卡 / 行程 / 账本都按锁定态出一遍 */
+function repaintAllForLock() {
+  if (!lastInput || !lastPlans) return;
+  var plan = null;
+  for (var i = 0; i < lastPlans.length; i++) {
+    if (lastPlans[i].id === activePlanId) plan = lastPlans[i];
+  }
+  if (!plan) plan = lastPlans[0];
+
+  var chosenKeys = [];
+  for (var k = 0; k < plan.legs.length; k++) chosenKeys.push(plan.legs[k].chosen.key);
+
+  renderPlans(lastPlans, activePlanId);
+  renderItinerary(plan.split, lastInput);
+  renderTransport(plan.split, chosenKeys);
+  renderCost(plan.cost);
+  renderHighlights(lastInput.cities);   // 清单里的删除按钮/添加表单也要按锁定态重画
+  renderToolbox(lastInput);
+}
+
+function scrollToResults() {
+  var area = document.getElementById('result-area');
+  if (area && area.scrollIntoView) area.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/* 「重新规划」= 解除锁定 + 清空当前行程（等同清空重填），先二次确认 */
+function askReplan() {
+  var bar = document.getElementById('confirm-replan');
+  if (!bar) return;
+  bar.hidden = false;
+  if (bar.scrollIntoView) bar.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+function cancelReplan() {
+  var bar = document.getElementById('confirm-replan');
+  if (bar) bar.hidden = true;
+}
+function doReplan() {
+  cancelReplan();
+  clearConfirmed();
+  applyLockUI();
+  /* 直接触发"确定清空"那条链路（它才是真清）。
+     ⚠️ 不能点 btn-reset —— 那个按钮只负责"把确认条亮出来"，点它等于再问一遍。 */
+  var yes = document.getElementById('btn-reset-yes');
+  if (yes) yes.click();
+}
+
+/* ============================================================
+   ★ 行程总览图（Canvas，2026-10-27 用户反馈）
+
+   「最后一键生成这个方案所涵盖的所有包括交通，地点，美食，美景等等，
+     类似于一张总览图的形式，可以保存下载，方便出行查看，清晰明了，
+     从第一天到最后一天全都一目了然」
+
+   为什么用 Canvas 自己画，而不是截屏 / 生成 HTML 再打印：
+     · 截屏要用户自己动手，还可能只截到半屏；
+     · 打印成 PDF 在手机上没法直接存相册；
+     · Canvas 能把"五天每天干什么"一次排进一张竖长图，高度按内容自动长，
+       出来的就是一张 PNG，手机上长按就能存。
+   数据来源：buildItineraryRows（和「每日行程」表是同一份数据，不会两边对不上）。
+   ============================================================ */
+
+var OV = {
+  W: 1080,
+  pad: 56,
+  bg: '#ffffff',
+  ink: '#17202a',
+  ink2: '#5b6472',
+  brand: '#2a5fe0',
+  brandSoft: '#eef4ff',
+  line: '#e4e8ef',
+  accent: '#e8791f',
+  soft: '#f7f9fc'
+};
+var OV_FONT = '"Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Heiti SC", sans-serif';
+
+function ovFont(size, bold) {
+  return (bold ? 'bold ' : '') + size + 'px ' + OV_FONT;
+}
+
+/* 按字符宽度换行（中文没有空格，靠逐字量宽最稳） */
+function ovWrap(ctx, text, maxW) {
+  var lines = [];
+  var cur = '';
+  var s = String(text == null ? '' : text);
+  for (var i = 0; i < s.length; i++) {
+    var next = cur + s.charAt(i);
+    if (cur && ctx.measureText(next).width > maxW) { lines.push(cur); cur = s.charAt(i); }
+    else cur = next;
+  }
+  lines.push(cur);
+  return lines;
+}
+
+/* 取当前方案 */
+function ovCurrentPlan() {
+  if (!lastPlans || lastPlans.length === 0) return null;
+  for (var i = 0; i < lastPlans.length; i++) {
+    if (lastPlans[i].id === activePlanId) return lastPlans[i];
+  }
+  return lastPlans[0];
+}
+
+/* 把"要画什么"整理成一份结构（不含高度，高度在排版时算） */
+function ovCollect() {
+  var plan = ovCurrentPlan();
+  if (!plan || !lastInput) return null;
+
+  var rows = buildItineraryRows(plan.split, lastInput);
+  var items = [];
+
+  items.push({ t: 'header' });
+
+  items.push({ t: 'sec', title: '怎么走' });
+  for (var i = 0; i < plan.legs.length; i++) {
+    var leg = plan.legs[i];
+    var ch = leg.chosen;
+    items.push({
+      t: 'leg',
+      tag: leg.isReturn ? '返程' : (i === 0 ? '去程' : '中转'),
+      title: leg.from + ' → ' + leg.to,
+      detail: ch.mode + ' · 约 ' + ch.hours + ' 小时',
+      price: '¥' + ch.price
+    });
+  }
+
+  items.push({ t: 'sec', title: '每天安排' });
+  var dayNo = 0;
+  for (var r = 0; r < rows.length; r++) {
+    var row = rows[r];
+    dayNo++;
+    if (row.type === 'transit') {
+      items.push({ t: 'transit', dayNo: dayNo, text: row.items.join('；') });
+    } else {
+      items.push({
+        t: 'day', dayNo: dayNo, city: row.label,
+        list: row.items.length ? row.items : ['这天还没安排，可以到了再定'],
+        cost: row.cost,
+        more: row.more
+      });
+    }
+  }
+
+  items.push({ t: 'sec', title: '钱花在哪' });
+  items.push({ t: 'cost', rows: plan.cost.items, total: plan.cost.total, budget: lastInput.budget });
+
+  /* 清单：用户自己加的（那才是他真想去的）+ 内置推荐各城取前 2 条。
+     一条都没有就整个区块不画 —— 空标题比没内容更让人疑惑。 */
+  var hl = [];
+  for (var c = 0; c < lastInput.cities.length; c++) {
+    var city = lastInput.cities[c];
+    var mine = (typeof selfAdded !== 'undefined' && selfAdded[city]) ? selfAdded[city] : [];
+    for (var m = 0; m < mine.length; m++) {
+      hl.push({ city: city, type: '自定', name: mine[m].name, price: mine[m].price });
+    }
+    var builtin = (typeof CITY_HIGHLIGHTS !== 'undefined') ? CITY_HIGHLIGHTS[city] : null;
+    if (builtin && builtin.length) {
+      for (var b = 0; b < Math.min(2, builtin.length); b++) {
+        hl.push({ city: city, type: builtin[b].type === 'en' ? '吃' : '玩',
+                  name: builtin[b].name, price: builtin[b].price });
+      }
+    }
+  }
+  if (hl.length > 0) {
+    items.push({ t: 'sec', title: '吃的玩的' });
+    items.push({ t: 'hl', list: hl });
+  }
+
+  items.push({ t: 'footer' });
+  return items;
+}
+
+/* 绘制（含排版：先量后画，两次遍历共用同一套 line 计算） */
+function drawOverview() {
+  var canvas = document.getElementById('overview-canvas');
+  if (!canvas) return false;
+  var ctx = canvas.getContext ? canvas.getContext('2d') : null;
+  if (!ctx) return false;
+
+  var items = ovCollect();
+  if (!items) return false;
+
+  var W = OV.W, PAD = OV.pad, INNER = W - PAD * 2;
+
+  /* ---------- 第一遍：排版（量高度） ---------- */
+  function layout(draw) {
+    var y = 0;
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+
+      if (it.t === 'header') {
+        var h = 268;
+        if (draw) {
+          ctx.fillStyle = OV.brandSoft;
+          ctx.fillRect(0, 0, W, h);
+          ctx.fillStyle = OV.brand;
+          ctx.fillRect(0, 0, 10, h);
+
+          ctx.fillStyle = OV.ink;
+          ctx.font = ovFont(46, true);
+          var title = lastInput.cities.join(' · ') + '  ' + lastInput.days + ' 天';
+          ctx.fillText(title, PAD, 104);
+
+          ctx.fillStyle = OV.ink2;
+          ctx.font = ovFont(23);
+          ctx.fillText(lastInput.fromCity + ' 出发 · 共 ' + lastInput.days + ' 天 · 预计总花费 ¥' +
+            (ovCurrentPlan() ? ovCurrentPlan().total : 0), PAD, 150);
+
+          ctx.fillStyle = OV.brand;
+          ctx.font = ovFont(20, true);
+          ctx.fillText('行程总览 · 按这套走就行', PAD, 196);
+
+          if (planConfirmed) {
+            ctx.fillStyle = OV.accent;
+            ctx.font = ovFont(20, true);
+            ctx.fillText('已确认', W - PAD - 76, 196);
+          }
+        }
+        y += h;
+        continue;
+      }
+
+      if (it.t === 'sec') {
+        var hs = 86;
+        if (draw) {
+          ctx.fillStyle = OV.ink;
+          ctx.font = ovFont(30, true);
+          ctx.fillText(it.title, PAD, y + 56);
+          ctx.fillStyle = OV.line;
+          ctx.fillRect(PAD, y + 70, INNER, 2);
+        }
+        y += hs;
+        continue;
+      }
+
+      if (it.t === 'leg') {
+        var hl = 82;
+        if (draw) {
+          ctx.fillStyle = OV.soft;
+          ctx.fillRect(PAD, y + 8, INNER, hl - 16);
+          ctx.fillStyle = OV.brand;
+          ctx.font = ovFont(19, true);
+          ctx.fillText(it.tag, PAD + 20, y + 38);
+
+          ctx.fillStyle = OV.ink;
+          ctx.font = ovFont(25, true);
+          ctx.fillText(it.title, PAD + 96, y + 38);
+
+          ctx.fillStyle = OV.ink2;
+          ctx.font = ovFont(21);
+          ctx.fillText(it.detail, PAD + 96, y + 66);
+
+          ctx.fillStyle = OV.accent;
+          ctx.font = ovFont(24, true);
+          ctx.textAlign = 'right';
+          ctx.fillText(it.price + '（估）', W - PAD - 20, y + 52);
+          ctx.textAlign = 'left';
+        }
+        y += hl;
+        continue;
+      }
+
+      if (it.t === 'transit') {
+        var ht = 66;
+        if (draw) {
+          ctx.fillStyle = OV.ink2;
+          ctx.font = ovFont(22);
+          ctx.fillText('第 ' + it.dayNo + ' 天 · 在路上', PAD, y + 34);
+          ctx.fillStyle = OV.ink;
+          ctx.font = ovFont(22);
+          ctx.fillText(it.text, PAD + 190, y + 34);
+        }
+        y += ht;
+        continue;
+      }
+
+      if (it.t === 'day') {
+        ctx.font = ovFont(23);
+        var lineSets = [];
+        for (var li = 0; li < it.list.length; li++) {
+          lineSets.push(ovWrap(ctx, '· ' + it.list[li], INNER - 300));
+        }
+        var totalLines = 0;
+        for (var lj = 0; lj < lineSets.length; lj++) totalLines += lineSets[lj].length;
+        var hd = 78 + totalLines * 34 + (it.cost ? 0 : 0) + (it.more ? 40 : 0);
+
+        if (draw) {
+          /* 左侧：第几天 + 城市 */
+          ctx.fillStyle = OV.brand;
+          ctx.font = ovFont(22, true);
+          ctx.fillText('第 ' + it.dayNo + ' 天', PAD, y + 34);
+
+          ctx.fillStyle = OV.ink;
+          ctx.font = ovFont(27, true);
+          ctx.fillText(it.city, PAD + 120, y + 36);
+
+          /* 右侧：当天花费 */
+          ctx.fillStyle = OV.ink2;
+          ctx.font = ovFont(20);
+          ctx.textAlign = 'right';
+          ctx.fillText('当天约 ¥' + it.cost, W - PAD, y + 34);
+          ctx.textAlign = 'left';
+
+          /* 安排条目 */
+          var yy = y + 36;
+          ctx.font = ovFont(23);
+          for (var k1 = 0; k1 < lineSets.length; k1++) {
+            for (var k2 = 0; k2 < lineSets[k1].length; k2++) {
+              yy += 34;
+              ctx.fillStyle = OV.ink;
+              ctx.fillText(lineSets[k1][k2], PAD + 14, yy);
+            }
+          }
+          if (it.more) {
+            yy += 34;
+            ctx.fillStyle = OV.ink2;
+            ctx.font = ovFont(20);
+            ctx.fillText('（还有 ' + it.more.count + ' 条没排下：' +
+              it.more.items.slice(0, 2).join('、') + '…）', PAD + 14, yy);
+          }
+
+          ctx.fillStyle = OV.line;
+          ctx.fillRect(PAD, y + hd - 6, INNER, 1);
+        }
+        y += hd;
+        continue;
+      }
+
+      if (it.t === 'cost') {
+        var rowsN = it.rows.length + 1;
+        var hc = 26 + rowsN * 46 + (it.budget ? 46 : 0);
+        if (draw) {
+          for (var c1 = 0; c1 < it.rows.length; c1++) {
+            var row1 = it.rows[c1];
+            var cy = y + 30 + c1 * 46;
+            ctx.fillStyle = OV.ink;
+            ctx.font = ovFont(23);
+            ctx.fillText(row1.label, PAD + 8, cy);
+            ctx.fillStyle = OV.ink2;
+            ctx.font = ovFont(19);
+            ctx.fillText(String(row1.detail || '').slice(0, 46), PAD + 210, cy);
+            ctx.fillStyle = OV.ink;
+            ctx.font = ovFont(23, true);
+            ctx.textAlign = 'right';
+            ctx.fillText('¥' + row1.amount, W - PAD - 8, cy);
+            ctx.textAlign = 'left';
+          }
+          var ty = y + 30 + it.rows.length * 46;
+          ctx.fillStyle = OV.line;
+          ctx.fillRect(PAD, ty - 26, INNER, 2);
+          ctx.fillStyle = OV.ink;
+          ctx.font = ovFont(27, true);
+          ctx.fillText('合计', PAD + 8, ty + 10);
+          ctx.fillStyle = OV.accent;
+          ctx.font = ovFont(28, true);
+          ctx.textAlign = 'right';
+          ctx.fillText('¥' + it.total, W - PAD - 8, ty + 10);
+          ctx.textAlign = 'left';
+
+          if (it.budget) {
+            ctx.fillStyle = OV.ink2;
+            ctx.font = ovFont(21);
+            ctx.fillText('预算 ¥' + it.budget + ' · ' +
+              (it.budget >= it.total ? ('还剩 ¥' + (it.budget - it.total)) : ('超出 ¥' + (it.total - it.budget))),
+              PAD + 8, ty + 46);
+          }
+        }
+        y += hc;
+        continue;
+      }
+
+      if (it.t === 'hl') {
+        var hhl = 30 + it.list.length * 42;
+        if (draw) {
+          for (var h1 = 0; h1 < it.list.length; h1++) {
+            var e = it.list[h1];
+            var ey = y + 26 + h1 * 42;
+            ctx.fillStyle = e.type === '吃' ? OV.accent : OV.brand;
+            ctx.font = ovFont(19, true);
+            ctx.fillText(e.type, PAD + 8, ey);
+            ctx.fillStyle = OV.ink;
+            ctx.font = ovFont(22);
+            ctx.fillText(e.city + ' · ' + e.name, PAD + 66, ey);
+            ctx.fillStyle = OV.ink2;
+            ctx.font = ovFont(19);
+            ctx.textAlign = 'right';
+            ctx.fillText(e.price > 0 ? ('约 ¥' + e.price) : '免费', W - PAD - 8, ey);
+            ctx.textAlign = 'left';
+          }
+        }
+        y += hhl;
+        continue;
+      }
+
+      if (it.t === 'footer') {
+        var hf = 132;
+        if (draw) {
+          ctx.fillStyle = OV.ink2;
+          ctx.font = ovFont(19);
+          ctx.fillText('价格均为估算，实际以 12306 / 航司 / 客运 App 为准。', PAD, y + 44);
+          ctx.fillText('生成时间：' + new Date().toLocaleString('zh-CN', { hour12: false }), PAD, y + 76);
+          ctx.fillStyle = OV.brand;
+          ctx.font = ovFont(20, true);
+          ctx.fillText('出行规划小助手', PAD, y + 112);
+        }
+        y += hf;
+        continue;
+      }
+    }
+    return y;
+  }
+
+  /* 量高度 */
+  var H = layout(false);
+  canvas.width = W;
+  canvas.height = H;
+  ctx = canvas.getContext('2d');
+
+  /* 底色 + 再画一遍 */
+  ctx.fillStyle = OV.bg;
+  ctx.fillRect(0, 0, W, H);
+  ctx.textBaseline = 'alphabetic';
+  layout(true);
+
+  return true;
+}
+
+/* 下载 PNG。手机上 a[download] 不一定生效（iOS 会直接开图），所以提示里写清长按保存 */
+function downloadOverviewImage() {
+  var canvas = document.getElementById('overview-canvas');
+  if (!canvas) return;
+  var ok = drawOverview();
+  if (!ok) return;
+
+  var name = '行程总览-' + lastInput.cities.join('-') + '-' + lastInput.days + '天.png';
+  try {
+    var url = canvas.toDataURL('image/png');
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    var hint = document.getElementById('overview-hint');
+    if (hint) {
+      hint.textContent = '已开始下载。手机上没有自动保存的话，长按图片 → 存到相册。';
+    }
+  } catch (e) {
+    var hint2 = document.getElementById('overview-hint');
+    if (hint2) hint2.textContent = '这台设备不支持直接下载，长按图片试试。';
+  }
+}
+
+/* ============================================================
+   ★ 旅行档案 + 账单版总览图（2026-10-28 用户反馈）
+
+   「我想要用户游玩回来过后也能找到之前的总览图，然后确定行程花费的修改，
+     完完全全按照游玩的开销来生成最终的总览图，相当于一次旅行账单记录，
+     最后再加一行本次出行感悟和收获（推荐哪些地方，避雷哪些地方）」
+
+   设计口径（和用户逐条对过）：
+     · 档案存在本机浏览器 localStorage（和自填地点同一套做法），
+       不上传网络 —— 与页脚"不上传任何数据"的承诺一致；
+       代价：换设备看不到、清浏览器数据会丢（说明区写明了）。
+     · 确认方案那一刻自动存档，存的是【计划】快照；玩回来后打开档案
+       回填【实际】开销，再生成账单图 —— 计划/实际两列对照，
+       超支标红、省了标绿。
+     · 感悟两栏：推荐（💚）/ 避雷（⚠️），纯手填，画进账单图。
+     · 账单图的艺术感来自【程序画的装饰边框】（渐变天色 + 三层山影 +
+       虚线路线 + 图钉 + 四角菱形花边），不使用任何外部图片
+       —— 断网可用（AC14），也不花任何额度。
+   ============================================================ */
+
+var ARCHIVES_KEY = 'meng-vibe-coding:archives';
+var ARCHIVES_MAX = 30;        // 最多存 30 份（防止 localStorage 被塞爆），新的顶掉旧的
+var currentArchiveId = null;  // 账单编辑器当前打开的是哪份档案
+var pendingDeleteId = null;   // 「删除」要连点两次才真删（替代弹窗，双保险的老规矩）
+
+function loadArchives() {
+  try {
+    var raw = localStorage.getItem(ARCHIVES_KEY);
+    if (!raw) return [];
+    var list = JSON.parse(raw);
+    return Object.prototype.toString.call(list) === '[object Array]' ? list : [];
+  } catch (e) {
+    return [];   // 存的不是合法 JSON（比如老版本残留）：当没存过，别报错卡死
+  }
+}
+
+function saveArchives(list) {
+  try {
+    localStorage.setItem(ARCHIVES_KEY, JSON.stringify(list));
+  } catch (e) {
+    /* 存满了 / 隐私模式：档案功能静默降级，不影响主流程 */
+  }
+}
+
+function fmtArchiveDate(ms) {
+  var d = new Date(ms);
+  function p(n) { return (n < 10 ? '0' : '') + n; }
+  return d.getFullYear() + '/' + p(d.getMonth() + 1) + '/' + p(d.getDate()) +
+    ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+
+/* 确认方案那一刻，把当前方案拍成一份快照。
+   只拷"画账单要用的字段"，不存函数/引用，保证 JSON 化后干干净净。 */
+function snapshotArchive() {
+  var plan = ovCurrentPlan();
+  if (!plan || !lastInput) return null;
+
+  var legs = [];
+  for (var i = 0; i < plan.legs.length; i++) {
+    var leg = plan.legs[i];
+    var ch = leg.chosen;
+    legs.push({
+      tag: leg.isReturn ? '返程' : (i === 0 ? '去程' : '中转'),
+      from: leg.from, to: leg.to,
+      mode: ch.mode, hours: ch.hours, price: ch.price
+    });
+  }
+
+  var rows = buildItineraryRows(plan.split, lastInput);
+  var dayRows = [];
+  for (var r = 0; r < rows.length; r++) {
+    dayRows.push({
+      type: rows[r].type,
+      label: rows[r].label,
+      items: rows[r].items.slice(0),
+      cost: rows[r].cost,
+      more: rows[r].more
+    });
+  }
+
+  var costItems = [];
+  for (var c = 0; c < plan.cost.items.length; c++) {
+    var it = plan.cost.items[c];
+    costItems.push({ key: it.key, label: it.label, detail: it.detail, amount: it.amount });
+  }
+
+  return {
+    id: 'a' + Date.now(),
+    createdAt: Date.now(),
+    input: {
+      fromCity: lastInput.fromCity,
+      cities: lastInput.cities.slice(0),
+      days: lastInput.days,
+      budget: lastInput.budget
+    },
+    legs: legs,
+    dayRows: dayRows,
+    costItems: costItems,
+    planTotal: plan.cost.total,
+    actual: null,       // 玩回来回填后才有了"实际"
+    actualDays: null,   // 实际的每天安排（改过才有；null = 和计划一样）
+    extraCosts: [],     // 计划外的花销（纪念品、补票之类）
+    rec: '',
+    avoid: '',
+    thoughts: ''
+  };
+}
+
+/* 确认即存档：新档案放最前面（最近的一次在最上） */
+function archiveCurrentPlan() {
+  var snap = snapshotArchive();
+  if (!snap) return;
+  var list = loadArchives();
+  list.unshift(snap);
+  if (list.length > ARCHIVES_MAX) list.length = ARCHIVES_MAX;
+  saveArchives(list);
+  renderArchives();
+}
+
+function findArchive(id) {
+  var list = loadArchives();
+  for (var i = 0; i < list.length; i++) {
+    if (list[i].id === id) return list[i];
+  }
+  return null;
+}
+
+/* 档案列表。全用 createElement/textContent 拼，杜绝把存档内容当 HTML 插进来 */
+function renderArchives() {
+  var area = document.getElementById('archive-area');
+  var listEl = document.getElementById('archives-list');
+  if (!area || !listEl) return;
+
+  var list = loadArchives();
+  pendingDeleteId = null;
+  if (list.length === 0) {
+    area.hidden = true;      // 没有档案时整个区都不出现，不占地方
+    listEl.innerHTML = '';
+    return;
+  }
+  area.hidden = false;
+  listEl.innerHTML = '';
+
+  for (var i = 0; i < list.length; i++) {
+    var a = list[i];
+    var row = document.createElement('div');
+    row.className = 'archive-item';
+
+    var main = document.createElement('div');
+    main.className = 'archive-main';
+    var title = document.createElement('div');
+    title.className = 'archive-title';
+    title.textContent = a.input.cities.join(' · ') + '  ' + a.input.days + ' 天';
+    var meta = document.createElement('div');
+    meta.className = 'archive-meta';
+    meta.textContent = '存于 ' + fmtArchiveDate(a.createdAt) + ' · ' +
+      (a.actual ? '已回填 · 实际 ¥' + a.actual.total : '待回填');
+    main.appendChild(title);
+    main.appendChild(meta);
+    row.appendChild(main);
+
+    var ops = document.createElement('div');
+    ops.className = 'archive-ops';
+    var open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'btn btn-sm';
+    open.setAttribute('data-act', 'open');
+    open.setAttribute('data-id', a.id);
+    open.textContent = '打开回填';
+    var del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'btn btn-ghost btn-sm';
+    del.setAttribute('data-act', 'del');
+    del.setAttribute('data-id', a.id);
+    del.textContent = '删除';
+    ops.appendChild(open);
+    ops.appendChild(del);
+    row.appendChild(ops);
+    listEl.appendChild(row);
+  }
+}
+
+/* 列表上的按钮用"事件委托"：监听挂在列表容器上，点谁看 data-act。
+   为什么不每行绑一次：列表是整块重画的，重画后旧监听全丢，
+   还容易踩"闭包记错行"的坑（Day 7 教训）。 */
+function bindArchives() {
+  var listEl = document.getElementById('archives-list');
+  if (!listEl) return;
+  listEl.addEventListener('click', function (e) {
+    var t = e.target;
+    if (!t || !t.getAttribute) return;
+    var act = t.getAttribute('data-act');
+    var id = t.getAttribute('data-id');
+    if (act === 'open') {
+      openArchiveEditor(id);
+    } else if (act === 'del') {
+      if (pendingDeleteId === id) {
+        deleteArchive(id);        // 第二次点：真删
+      } else {
+        pendingDeleteId = id;     // 第一次点：先吓一跳，按钮变字
+        t.textContent = '再点一次确认删除';
+      }
+    }
+  });
+}
+
+function deleteArchive(id) {
+  var list = loadArchives();
+  var next = [];
+  for (var i = 0; i < list.length; i++) {
+    if (list[i].id !== id) next.push(list[i]);
+  }
+  saveArchives(next);
+  if (currentArchiveId === id) closeArchiveEditor();
+  renderArchives();
+}
+
+function closeArchiveEditor() {
+  currentArchiveId = null;
+  var ed = document.getElementById('block-archive-editor');
+  if (ed) ed.hidden = true;
+  var bill = document.getElementById('bill-wrap');
+  if (bill) bill.hidden = true;
+}
+
+/* 计划里那天的安排文本 —— 编辑器和账单图共用同一份拼法，避免两边不一样 */
+function planDayText(row) {
+  return (row.items && row.items.length) ? row.items.join('；') : '（这天没排具体安排）';
+}
+
+/* 编辑器「实际去了哪、吃了啥」：每天一行，预填计划文本，直接改成实际就行 */
+function renderArchiveDays(a) {
+  var wrap = document.getElementById('archive-days-list');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  for (var i = 0; i < a.dayRows.length; i++) {
+    var row = a.dayRows[i];
+    var box = document.createElement('div');
+    box.className = 'day-edit-row';
+
+    var lab = document.createElement('div');
+    lab.className = 'day-edit-label';
+    lab.textContent = 'D' + (i + 1) + (row.label ? ' · ' + row.label : '');
+
+    var ta = document.createElement('textarea');
+    ta.className = 'day-edit-input';
+    ta.setAttribute('data-day', String(i));
+    ta.setAttribute('rows', '2');
+    ta.setAttribute('aria-label', '第 ' + (i + 1) + ' 天实际去了哪、吃了啥');
+    ta.value = (a.actualDays && a.actualDays[i]) ? a.actualDays[i] : planDayText(row);
+
+    box.appendChild(lab);
+    box.appendChild(ta);
+    wrap.appendChild(box);
+  }
+}
+
+function updateExtraCostHead() {
+  var tip = document.querySelector('.extra-cost-tip');
+  var rows = document.querySelectorAll('#archive-extra-list .extra-row').length;
+  if (tip) tip.textContent = rows ? ('计划外的花销（' + rows + ' 项）') : '计划外的花销';
+}
+
+/* 计划外花销一行 = 名称 + 金额 + 删 */
+function addExtraCostRow(label, amount) {
+  var wrap = document.getElementById('archive-extra-list');
+  if (!wrap) return;
+
+  var row = document.createElement('div');
+  row.className = 'actual-row extra-row';
+
+  var nameInp = document.createElement('input');
+  nameInp.type = 'text';
+  nameInp.className = 'extra-name';
+  nameInp.setAttribute('placeholder', '花在哪了（例：纪念品）');
+  nameInp.setAttribute('aria-label', '计划外花销名称');
+  nameInp.value = label || '';
+
+  var amtInp = document.createElement('input');
+  amtInp.type = 'number';
+  amtInp.className = 'actual-input';
+  amtInp.setAttribute('min', '0');
+  amtInp.setAttribute('step', '1');
+  amtInp.setAttribute('placeholder', '金额');
+  amtInp.setAttribute('aria-label', '计划外花销金额');
+  amtInp.value = (amount === 0 || amount) ? amount : '';
+
+  var del = document.createElement('button');
+  del.type = 'button';
+  del.className = 'btn btn-ghost btn-sm extra-del';
+  del.textContent = '删';
+  del.setAttribute('aria-label', '删掉这项计划外花销');
+  /* 这个处理器只认自己那一行（del 是本次调用的局部变量），
+     不存在行循环里捕获最后一行的闭包坑。 */
+  del.addEventListener('click', function () {
+    var p = del.parentNode;
+    if (p && p.parentNode) p.parentNode.removeChild(p);
+    updateExtraCostHead();
+  });
+
+  row.appendChild(nameInp);
+  row.appendChild(amtInp);
+  row.appendChild(del);
+  wrap.appendChild(row);
+  updateExtraCostHead();
+}
+
+function renderExtraCosts(a) {
+  var wrap = document.getElementById('archive-extra-list');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  var list = a.extraCosts || [];
+  for (var i = 0; i < list.length; i++) {
+    addExtraCostRow(list[i].label, list[i].amount);
+  }
+  updateExtraCostHead();
+}
+
+/* 打开档案 → 把回填编辑器填好：
+   实际开销一行一项（预填上次的值，没回填过就预填计划值），
+   感悟两栏原样带回。 */
+function openArchiveEditor(id) {
+  var a = findArchive(id);
+  if (!a) return;
+  currentArchiveId = id;
+
+  var t = document.getElementById('archive-editor-title');
+  if (t) t.textContent = '账单回填 · ' + a.input.cities.join(' · ') + ' ' + a.input.days + ' 天';
+
+  renderArchiveDays(a);    // 先铺「每天实际去了哪、吃了啥」
+  renderExtraCosts(a);     // 再把上次记的计划外花销铺回来
+
+  var wrap = document.getElementById('archive-actual-list');
+  wrap.innerHTML = '';
+  var actualMap = {};
+  if (a.actual && a.actual.items) {
+    for (var m = 0; m < a.actual.items.length; m++) {
+      actualMap[a.actual.items[m].key] = a.actual.items[m].amount;
+    }
+  }
+  for (var i = 0; i < a.costItems.length; i++) {
+    var it = a.costItems[i];
+    var row = document.createElement('div');
+    row.className = 'actual-row';
+
+    var info = document.createElement('div');
+    info.className = 'actual-info';
+    var lab = document.createElement('div');
+    lab.className = 'actual-label';
+    lab.textContent = it.label;
+    var det = document.createElement('div');
+    det.className = 'actual-detail';
+    det.textContent = '计划 ¥' + it.amount;
+    info.appendChild(lab);
+    info.appendChild(det);
+
+    var inp = document.createElement('input');
+    inp.type = 'number';
+    inp.className = 'actual-input';
+    inp.setAttribute('data-key', it.key);
+    inp.setAttribute('min', '0');
+    inp.setAttribute('step', '1');
+    inp.setAttribute('aria-label', it.label + '实际花费');
+    inp.value = (actualMap[it.key] !== undefined ? actualMap[it.key] : it.amount);
+
+    row.appendChild(info);
+    row.appendChild(inp);
+    wrap.appendChild(row);
+  }
+
+  var rec = document.getElementById('archive-rec');
+  var avoid = document.getElementById('archive-avoid');
+  var thoughts = document.getElementById('archive-thoughts');
+  if (rec) rec.value = a.rec || '';
+  if (avoid) avoid.value = a.avoid || '';
+  if (thoughts) thoughts.value = a.thoughts || '';
+
+  var bill = document.getElementById('bill-wrap');
+  if (bill) bill.hidden = true;
+
+  var ed = document.getElementById('block-archive-editor');
+  if (ed) {
+    ed.hidden = false;
+    if (ed.scrollIntoView) ed.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+
+/* 保存回填：读输入框 → 空的/负数按计划价算 → 写回档案 → 列表刷新。
+   auto = true（生成账单图前的自动保存）：只有「确实有改动」才落实际值 ——
+   用户一个数字没改、一句话没写时，不能把计划值伪装成"实际花销"。 */
+function saveArchiveActual(opts) {
+  var auto = !!(opts && opts.auto);
+  var a = findArchive(currentArchiveId);
+  if (!a) return;
+
+  var recEl = document.getElementById('archive-rec');
+  var avoidEl = document.getElementById('archive-avoid');
+  var thoughtsEl = document.getElementById('archive-thoughts');
+  var recVal = recEl ? recEl.value : '';
+  var avoidVal = avoidEl ? avoidEl.value : '';
+  var thoughtsVal = thoughtsEl ? thoughtsEl.value : '';
+
+  var inputs = document.querySelectorAll('#archive-actual-list .actual-input');
+  var items = [];
+  var total = 0;
+  var changed = (a.actual !== null);
+  for (var i = 0; i < inputs.length; i++) {
+    var key = inputs[i].getAttribute('data-key');
+    var planIt = null;
+    for (var j = 0; j < a.costItems.length; j++) {
+      if (a.costItems[j].key === key) planIt = a.costItems[j];
+    }
+    if (!planIt) continue;
+    var v = parseFloat(inputs[i].value);
+    if (isNaN(v) || v < 0) v = planIt.amount;
+    v = Math.round(v * 100) / 100;
+    if (v !== planIt.amount) changed = true;
+    items.push({ key: key, label: planIt.label, amount: v });
+    total += v;
+  }
+  if (recVal || avoidVal || thoughtsVal) changed = true;
+
+  /* 每天实际去了哪、吃了啥：和计划文本比，改过才算"有改动" */
+  var dayEls = document.querySelectorAll('#archive-days-list .day-edit-input');
+  var days = [];
+  var daysChanged = false;
+  for (var d = 0; d < dayEls.length; d++) {
+    var txt = dayEls[d].value || '';
+    if (!txt.replace(/\s/g, '')) txt = planDayText(a.dayRows[d]);   // 清空了就当"照计划"
+    if (txt !== planDayText(a.dayRows[d])) daysChanged = true;
+    days.push(txt);
+  }
+  if (daysChanged) changed = true;
+
+  /* 计划外花销：名称和金额都空的行直接忽略 */
+  var extraRows = document.querySelectorAll('#archive-extra-list .extra-row');
+  var extras = [];
+  for (var e = 0; e < extraRows.length; e++) {
+    var nmEl = extraRows[e].querySelector('.extra-name');
+    var amEl = extraRows[e].querySelector('.actual-input');
+    var nm = nmEl ? (nmEl.value || '').replace(/^\s+|\s+$/g, '') : '';
+    var am = amEl ? parseFloat(amEl.value) : NaN;
+    if (!nm && (isNaN(am) || am === 0)) continue;
+    if (!nm) nm = '计划外';
+    if (isNaN(am) || am < 0) am = 0;
+    am = Math.round(am * 100) / 100;
+    extras.push({ label: nm, amount: am });
+    total += am;
+  }
+  if (extras.length) changed = true;
+
+  /* 自动保存但什么都没改：不伪造"实际"，只刷新列表 */
+  if (auto && !changed) {
+    renderArchives();
+    return;
+  }
+
+  a.actual = { items: items, total: Math.round(total * 100) / 100 };
+  a.actualDays = daysChanged ? days : null;   // null = 和计划一样，账单就用计划文本
+  a.extraCosts = extras;
+  a.rec = recVal;
+  a.avoid = avoidVal;
+  a.thoughts = thoughtsVal;
+
+  var list = loadArchives();
+  for (var k = 0; k < list.length; k++) {
+    if (list[k].id === a.id) list[k] = a;
+  }
+  saveArchives(list);
+  renderArchives();
+
+  var btn = document.getElementById('btn-save-actual');
+  if (btn) {
+    btn.textContent = '✅ 已保存';
+    setTimeout(function () { btn.textContent = '💾 保存回填'; }, 1600);
+  }
+}
+
+/* 生成账单图前先自动存一次回填，防止"改了忘存、图和列表对不上" */
+function showBillImage() {
+  if (!findArchive(currentArchiveId)) return;
+  saveArchiveActual({ auto: true });   // 改了忘存的话先自动存；没改就不动 actual
+  var a = findArchive(currentArchiveId);
+  if (!a) return;
+  var ok = drawBill(a);
+  var wrap = document.getElementById('bill-wrap');
+  if (wrap && ok) {
+    wrap.hidden = false;
+    if (wrap.scrollIntoView) wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+
+function downloadBillImage() {
+  var canvas = document.getElementById('bill-canvas');
+  if (!canvas) return;
+  var a = findArchive(currentArchiveId);
+  if (!a) return;
+
+  var name = '旅行账单-' + a.input.cities.join('-') + '-' + a.input.days + '天.png';
+  try {
+    var url = canvas.toDataURL('image/png');
+    var link = document.createElement('a');
+    link.href = url;
+    link.download = name;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    var hint = document.getElementById('bill-hint');
+    if (hint) hint.textContent = '已开始下载。手机上没有自动保存的话，长按图片 → 存到相册。';
+  } catch (e) {
+    var hint2 = document.getElementById('bill-hint');
+    if (hint2) hint2.textContent = '这台设备不支持直接下载，长按图片试试。';
+  }
+}
+
+/* ============================================================
+   账单版总览图（Canvas）。边框的"艺术感"全部程序绘制：
+   渐变天色 + 三层山影 + 虚线路线 + 图钉 + 四角菱形花边，
+   不用任何外部图片（断网可用，AC14）。
+   结构和 drawOverview 一样是"先量高度再画"两遍走。
+   ============================================================ */
+
+var BILL = {
+  W: 1080,
+  pad: 64,
+  paper: '#faf6ee',      // 米白纸面
+  ink: '#2b2a26',
+  ink2: '#6f6a60',
+  brand: '#2a5fe0',
+  accent: '#e8791f',
+  over: '#c0392b',       // 超支红
+  save: '#2f9e44',       // 省钱绿
+  m1: '#cdd8ef',         // 远山（最浅）
+  m2: '#a3b4dd',
+  m3: '#7a92c9'          // 近山（最深）
+};
+
+/* 山影：确定性伪随机（sin 混种子）——量高度和真画两遍必须长得一样 */
+function drawMountains(ctx, W, base, layers) {
+  for (var l = 0; l < layers.length; l++) {
+    var L = layers[l];
+    ctx.fillStyle = L.color;
+    ctx.beginPath();
+    ctx.moveTo(0, base);
+    var steps = 12;
+    for (var s = 1; s < steps; s++) {
+      var x = (W / steps) * s;
+      var noise = Math.abs(Math.sin(s * 3.7 + L.seed * 13.1));
+      ctx.lineTo(x, base - L.amp * (0.3 + 0.7 * noise));
+    }
+    ctx.lineTo(W, base);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
+/* 路线图钉：出发城 + 目的地城排一条虚线，上下轻微起伏像旅程曲线 */
+function billRoutePoints(input, W, bandH) {
+  var names = [input.fromCity].concat(input.cities);
+  var y = bandH - 42;
+  var x0 = 130, x1 = W - 130;
+  var pts = [];
+  for (var i = 0; i < names.length; i++) {
+    var t = names.length === 1 ? 0 : i / (names.length - 1);
+    pts.push({
+      x: x0 + (x1 - x0) * t,
+      y: y + Math.sin(i * 2.1) * 12,
+      name: names[i]
+    });
+  }
+  return pts;
+}
+
+/* 差值描述：超支红 / 省绿 / 持平灰。返回 {text, color} */
+function billDiff(planV, actV) {
+  var d = Math.round((actV - planV) * 100) / 100;
+  if (Math.abs(d) < 0.01) return { text: '持平', color: BILL.ink2 };
+  if (d > 0) return { text: '超 ¥' + d, color: BILL.over };
+  return { text: '省 ¥' + Math.round(-d * 100) / 100, color: BILL.save };
+}
+
+function drawBill(a) {
+  var canvas = document.getElementById('bill-canvas');
+  if (!canvas || !a) return false;
+  var ctx = canvas.getContext ? canvas.getContext('2d') : null;
+  if (!ctx) return false;
+
+  var W = BILL.W, PAD = BILL.pad, INNER = W - PAD * 2;
+  var hasActual = !!(a.actual && a.actual.items && a.actual.items.length);
+  var actMap = {};
+  if (hasActual) {
+    for (var am = 0; am < a.actual.items.length; am++) {
+      actMap[a.actual.items[am].key] = a.actual.items[am].amount;
+    }
+  }
+  function actOf(key, planV) {
+    return actMap[key] !== undefined ? actMap[key] : planV;
+  }
+
+  /* ---------- 把要画的东西整理成结构 ---------- */
+  var items = [];
+  items.push({ t: 'band' });
+  items.push({ t: 'title' });
+
+  items.push({ t: 'sec', title: '怎么走的' });
+  for (var i = 0; i < a.legs.length; i++) {
+    var lg = a.legs[i];
+    items.push({
+      t: 'leg', tag: lg.tag,
+      title: lg.from + ' → ' + lg.to,
+      detail: lg.mode + ' · 约 ' + lg.hours + ' 小时',
+      price: '¥' + lg.price
+    });
+  }
+
+  var hasActualDays = !!(a.actualDays && a.actualDays.length);
+  items.push({ t: 'sec', title: hasActualDays ? '每天走了啥（实际）' : '每天走了啥' });
+  var dayNo = 0;
+  for (var r = 0; r < a.dayRows.length; r++) {
+    var row = a.dayRows[r];
+    dayNo++;
+    var planTxt = planDayText(row);
+    var actTxt = (hasActualDays && a.actualDays[r]) ? a.actualDays[r] : planTxt;
+    items.push({
+      t: 'day', dayNo: dayNo, label: row.label,
+      text: actTxt,
+      isActual: (actTxt !== planTxt)
+    });
+  }
+
+  /* 花费行 = 计划里的几项 + 计划外自己加的 */
+  var costRows = [];
+  for (var ci = 0; ci < a.costItems.length; ci++) {
+    costRows.push({ key: a.costItems[ci].key, label: a.costItems[ci].label, plan: a.costItems[ci].amount });
+  }
+  var extraList = a.extraCosts || [];
+  for (var ei = 0; ei < extraList.length; ei++) {
+    costRows.push({ key: '__extra' + ei, label: extraList[ei].label, plan: null, act: extraList[ei].amount });
+  }
+
+  items.push({ t: 'sec', title: '花了多少' });
+  items.push({
+    t: 'cost',
+    rows: costRows,
+    planTotal: a.planTotal,
+    actTotal: hasActual ? a.actual.total : a.planTotal,
+    budget: a.input.budget,
+    hasActual: hasActual
+  });
+
+  if (a.thoughts) items.push({ t: 'sense', mark: '💭 真实感受', text: a.thoughts, color: BILL.brand });
+  if (a.rec) items.push({ t: 'sense', mark: '💚 推荐', text: a.rec, color: BILL.save });
+  if (a.avoid) items.push({ t: 'sense', mark: '⚠️ 避雷', text: a.avoid, color: BILL.over });
+  items.push({ t: 'footer', hasActual: hasActual });
+
+  /* ---------- 排版 + 绘制（两遍共用） ---------- */
+  function layout(draw) {
+    var y = 0;
+    for (var ii = 0; ii < items.length; ii++) {
+      var it = items[ii];
+
+      if (it.t === 'band') {
+        var hb = 252;
+        if (draw) {
+          var g = ctx.createLinearGradient(0, 0, 0, hb);
+          g.addColorStop(0, '#fdf0dc');
+          g.addColorStop(1, '#f6f2e8');
+          ctx.fillStyle = g;
+          ctx.fillRect(0, 0, W, hb);
+
+          /* 太阳 + 光晕 */
+          ctx.fillStyle = BILL.accent;
+          ctx.beginPath(); ctx.arc(W - 190, 76, 32, 0, Math.PI * 2); ctx.fill();
+          ctx.globalAlpha = 0.22;
+          ctx.beginPath(); ctx.arc(W - 190, 76, 54, 0, Math.PI * 2); ctx.fill();
+          ctx.globalAlpha = 1;
+
+          /* 三层山影 */
+          drawMountains(ctx, W, hb, [
+            { amp: 92, color: BILL.m1, seed: 1 },
+            { amp: 64, color: BILL.m2, seed: 2 },
+            { amp: 40, color: BILL.m3, seed: 3 }
+          ]);
+
+          /* 虚线路线 + 图钉 */
+          var pts = billRoutePoints(a.input, W, hb);
+          ctx.strokeStyle = BILL.brand;
+          ctx.lineWidth = 2.5;
+          ctx.setLineDash([9, 7]);
+          ctx.beginPath();
+          for (var p1 = 0; p1 < pts.length; p1++) {
+            if (p1 === 0) ctx.moveTo(pts[p1].x, pts[p1].y);
+            else ctx.lineTo(pts[p1].x, pts[p1].y);
+          }
+          ctx.stroke();
+          ctx.setLineDash([]);
+          for (var p2 = 0; p2 < pts.length; p2++) {
+            var pt = pts[p2];
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath(); ctx.arc(pt.x, pt.y, 7, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = BILL.brand;
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            ctx.fillStyle = BILL.ink;
+            ctx.font = ovFont(18, true);
+            ctx.textAlign = 'center';
+            ctx.fillText(pt.name, pt.x, pt.y - 15);
+            ctx.textAlign = 'left';
+          }
+        }
+        y += hb;
+        continue;
+      }
+
+      if (it.t === 'title') {
+        var ht2 = 158;
+        if (draw) {
+          ctx.fillStyle = BILL.ink;
+          ctx.font = ovFont(44, true);
+          ctx.fillText('旅行账单', PAD, y + 60);
+          ctx.fillStyle = BILL.accent;
+          ctx.font = ovFont(21, true);
+          ctx.fillText(a.input.cities.join(' · ') + ' · ' + a.input.days + ' 天 · 确认于 ' +
+            fmtArchiveDate(a.createdAt), PAD, y + 100);
+          ctx.fillStyle = BILL.ink2;
+          ctx.font = ovFont(20);
+          ctx.fillText(a.input.fromCity + ' 出发' +
+            (a.input.budget ? ' · 预算 ¥' + a.input.budget : ''), PAD, y + 134);
+        }
+        y += ht2;
+        continue;
+      }
+
+      if (it.t === 'sec') {
+        var hs = 78;
+        if (draw) {
+          ctx.fillStyle = BILL.accent;
+          ctx.fillRect(PAD, y + 30, 6, 28);
+          ctx.fillStyle = BILL.ink;
+          ctx.font = ovFont(28, true);
+          ctx.fillText(it.title, PAD + 20, y + 55);
+        }
+        y += hs;
+        continue;
+      }
+
+      if (it.t === 'leg') {
+        var hl2 = 52;
+        if (draw) {
+          ctx.fillStyle = BILL.brand;
+          ctx.font = ovFont(18, true);
+          ctx.fillText(it.tag, PAD, y + 33);
+          ctx.fillStyle = BILL.ink;
+          ctx.font = ovFont(23, true);
+          ctx.fillText(it.title, PAD + 74, y + 33);
+          ctx.fillStyle = BILL.ink2;
+          ctx.font = ovFont(18);
+          ctx.fillText(it.detail, PAD + 282, y + 33);
+          ctx.fillStyle = BILL.ink;
+          ctx.font = ovFont(21, true);
+          ctx.textAlign = 'right';
+          ctx.fillText(it.price + '（估）', W - PAD, y + 33);
+          ctx.textAlign = 'left';
+        }
+        y += hl2;
+        continue;
+      }
+
+      if (it.t === 'day') {
+        ctx.font = ovFont(21);
+        var lines = ovWrap(ctx, it.text, INNER - 40);
+        var hd2 = 40 + lines.length * 32;
+        if (draw) {
+          ctx.fillStyle = BILL.brand;
+          ctx.font = ovFont(20, true);
+          ctx.fillText('D' + it.dayNo, PAD, y + 26);
+          ctx.fillStyle = BILL.ink2;
+          ctx.font = ovFont(18);
+          ctx.fillText(it.label, PAD + 46, y + 26);
+          if (it.isActual) {
+            ctx.fillStyle = BILL.accent;
+            ctx.font = ovFont(17, true);
+            ctx.fillText('· 实际', PAD + 46 + ctx.measureText(it.label).width + 10, y + 26);
+          }
+          ctx.font = ovFont(21);
+          ctx.fillStyle = BILL.ink;
+          var yy2 = y + 26;
+          for (var k1 = 0; k1 < lines.length; k1++) {
+            yy2 += 32;
+            ctx.fillText(lines[k1], PAD, yy2);
+          }
+        }
+        y += hd2;
+        continue;
+      }
+
+      if (it.t === 'cost') {
+        var hc = 34 + it.rows.length * 46 + 58 + (it.budget ? 42 : 0);
+        if (draw) {
+          /* 表头两列 */
+          ctx.fillStyle = BILL.ink2;
+          ctx.font = ovFont(17);
+          ctx.textAlign = 'right';
+          ctx.fillText('计划', W - PAD - 190, y + 22);
+          ctx.fillText('实际', W - PAD, y + 22);
+          ctx.textAlign = 'left';
+
+          for (var c1 = 0; c1 < it.rows.length; c1++) {
+            var row1 = it.rows[c1];
+            var cy = y + 30 + 24 + c1 * 46;
+            ctx.fillStyle = BILL.ink;
+            ctx.font = ovFont(22);
+            ctx.fillText(row1.label, PAD + 8, cy);
+
+            /* plan === null = 计划外自己加的那一项，左边那列显示「—」 */
+            var isExtra = (row1.plan === null);
+            var planV = isExtra ? 0 : row1.plan;
+            var av = (row1.act !== undefined) ? row1.act : actOf(row1.key, planV);
+            ctx.font = ovFont(21);
+            ctx.textAlign = 'right';
+            if (isExtra) {
+              ctx.fillStyle = BILL.ink2;
+              ctx.fillText('— → ¥' + av, W - PAD - 190, cy);
+            } else {
+              ctx.fillStyle = BILL.ink;
+              ctx.fillText('¥' + planV + ' → ¥' + av, W - PAD - 190, cy);
+            }
+            ctx.textAlign = 'left';
+
+            if (it.hasActual) {
+              var df = isExtra ? { text: '计划外', color: BILL.accent } : billDiff(planV, av);
+              ctx.fillStyle = df.color;
+              ctx.font = ovFont(20, true);
+              ctx.textAlign = 'right';
+              ctx.fillText(df.text, W - PAD, cy);
+              ctx.textAlign = 'left';
+            }
+          }
+
+          var ty = y + 34 + it.rows.length * 46 + 12;
+          ctx.fillStyle = '#ded5c2';
+          ctx.fillRect(PAD, ty - 24, INNER, 2);
+          ctx.fillStyle = BILL.ink;
+          ctx.font = ovFont(26, true);
+          ctx.fillText('合计', PAD + 8, ty + 12);
+          ctx.font = ovFont(23, true);
+          ctx.textAlign = 'right';
+          ctx.fillText('¥' + it.planTotal + ' → ¥' + it.actTotal, W - PAD - 190, ty + 12);
+          ctx.textAlign = 'left';
+          if (it.hasActual) {
+            var tdf = billDiff(it.planTotal, it.actTotal);
+            ctx.fillStyle = tdf.color;
+            ctx.font = ovFont(23, true);
+            ctx.textAlign = 'right';
+            ctx.fillText(tdf.text, W - PAD, ty + 12);
+            ctx.textAlign = 'left';
+          }
+
+          if (it.budget) {
+            var by = ty + 50;
+            ctx.fillStyle = BILL.ink2;
+            ctx.font = ovFont(20);
+            var bs;
+            if (it.hasActual) {
+              bs = it.budget >= it.actTotal
+                ? '预算 ¥' + it.budget + ' · 实际花销算下来还剩 ¥' + (it.budget - it.actTotal)
+                : '预算 ¥' + it.budget + ' · 实际超支 ¥' + (it.actTotal - it.budget);
+            } else {
+              bs = '预算 ¥' + it.budget + ' · 计划 ¥' + it.planTotal;
+            }
+            ctx.fillText(bs, PAD + 8, by);
+          }
+        }
+        y += hc;
+        continue;
+      }
+
+      if (it.t === 'sense') {
+        ctx.font = ovFont(21);
+        var slines = ovWrap(ctx, it.text, INNER - 20);
+        var hsn = 44 + slines.length * 34;
+        if (draw) {
+          ctx.fillStyle = it.color;
+          ctx.font = ovFont(21, true);
+          ctx.fillText(it.mark, PAD, y + 26);
+          ctx.fillStyle = BILL.ink;
+          ctx.font = ovFont(21);
+          var sy = y + 26;
+          for (var s2 = 0; s2 < slines.length; s2++) {
+            sy += 34;
+            ctx.fillText(slines[s2], PAD + 14, sy);
+          }
+        }
+        y += hsn;
+        continue;
+      }
+
+      if (it.t === 'footer') {
+        var hf2 = 140;
+        if (draw) {
+          ctx.fillStyle = BILL.ink2;
+          ctx.font = ovFont(18);
+          ctx.fillText(it.hasActual ? '实际花销由本人回填，仅作旅行记录。' : '还没回填实际花销，以上按计划价记录。',
+            PAD, y + 44);
+          ctx.fillText('记录时间：' + new Date().toLocaleString('zh-CN', { hour12: false }), PAD, y + 74);
+          ctx.fillStyle = BILL.brand;
+          ctx.font = ovFont(20, true);
+          ctx.fillText('出行规划小助手 · 旅行档案', PAD, y + 108);
+        }
+        y += hf2;
+        continue;
+      }
+    }
+    return y;
+  }
+
+  /* 量高度 → 撑画布 → 纸面底色 → 画 → 花边框 */
+  var H = layout(false);
+  canvas.width = W;
+  canvas.height = H;
+  ctx = canvas.getContext('2d');
+  ctx.fillStyle = BILL.paper;
+  ctx.fillRect(0, 0, W, H);
+  ctx.textBaseline = 'alphabetic';
+  layout(true);
+
+  /* 艺术边框：双线 + 四角菱形（画在最后，压在最上面） */
+  ctx.strokeStyle = '#b3a68c';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(14, 14, W - 28, H - 28);
+  ctx.lineWidth = 1;
+  ctx.strokeRect(22, 22, W - 44, H - 44);
+  ctx.fillStyle = BILL.accent;
+  var corners = [[14, 14], [W - 14, 14], [14, H - 14], [W - 14, H - 14]];
+  for (var cn = 0; cn < 4; cn++) {
+    var cx = corners[cn][0], cy2 = corners[cn][1];
+    ctx.beginPath();
+    ctx.moveTo(cx, cy2 - 7);
+    ctx.lineTo(cx + 7, cy2);
+    ctx.lineTo(cx, cy2 + 7);
+    ctx.lineTo(cx - 7, cy2);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  return true;
+}
+
 function initApp() {
   document.getElementById('btn-generate').addEventListener('click', generate);
   document.getElementById('btn-add-city').addEventListener('click', addCity);
@@ -4287,6 +6136,70 @@ function initApp() {
     });
   });
 
+  /* ---------- 2026-10-27 新增：确认方案 / 重新规划 / 总览图 ---------- */
+  var btnConfirm = document.getElementById('btn-confirm-plan');
+  if (btnConfirm) btnConfirm.addEventListener('click', askConfirmPlan);
+  var btnConfirmYes = document.getElementById('btn-confirm-plan-yes');
+  if (btnConfirmYes) btnConfirmYes.addEventListener('click', doConfirmPlan);
+  var btnConfirmNo = document.getElementById('btn-confirm-plan-no');
+  if (btnConfirmNo) btnConfirmNo.addEventListener('click', cancelConfirmPlan);
+
+  var btnReplan = document.getElementById('btn-replan');
+  if (btnReplan) btnReplan.addEventListener('click', askReplan);
+  var btnReplanYes = document.getElementById('btn-replan-yes');
+  if (btnReplanYes) btnReplanYes.addEventListener('click', doReplan);
+  var btnReplanNo = document.getElementById('btn-replan-no');
+  if (btnReplanNo) btnReplanNo.addEventListener('click', cancelReplan);
+
+  var btnSeeOv = document.getElementById('btn-see-overview');
+  if (btnSeeOv) {
+    btnSeeOv.addEventListener('click', function () {
+      switchView('overview');
+      drawOverview();
+    });
+  }
+
+  /* 「📚 打开旅行档案」：从已确认的提示条直接跳到页面底部的档案区，
+     不用用户自己往下翻找（2026-10-28 用户反馈"哪里打开档案"）。 */
+  var btnGotoArchive = document.getElementById('btn-goto-archive');
+  if (btnGotoArchive) {
+    btnGotoArchive.addEventListener('click', function () {
+      renderArchives();     // 万一是刚到这一页、列表还没铺过
+      var area = document.getElementById('archive-area');
+      if (!area || area.hidden) return;
+      /* 用"直接跳"而不是平滑滚动：跨了整整一屏内容，平滑滚很久；
+         而且个别环境（窗口最小化 / 省电模式）平滑滚动压根不推进。 */
+      if (area.scrollIntoView) area.scrollIntoView({ block: 'start' });
+      /* 跳过去之后闪一下，让眼睛落在这个卡上 */
+      area.classList.add('is-flash');
+      setTimeout(function () { area.classList.remove('is-flash'); }, 1500);
+    });
+  }
+  var btnDlOv = document.getElementById('btn-download-overview');
+  if (btnDlOv) btnDlOv.addEventListener('click', downloadOverviewImage);
+
+  /* ---------- 2026-10-28 新增：旅行档案 / 账单回填 / 账单图 ---------- */
+  var btnSaveActual = document.getElementById('btn-save-actual');
+  if (btnSaveActual) btnSaveActual.addEventListener('click', saveArchiveActual);
+  var btnBill = document.getElementById('btn-bill-image');
+  if (btnBill) btnBill.addEventListener('click', showBillImage);
+  var btnCloseArch = document.getElementById('btn-close-archive');
+  if (btnCloseArch) btnCloseArch.addEventListener('click', closeArchiveEditor);
+  var btnDlBill = document.getElementById('btn-download-bill');
+  if (btnDlBill) btnDlBill.addEventListener('click', downloadBillImage);
+  var btnAddExtra = document.getElementById('btn-add-extra-cost');
+  if (btnAddExtra) {
+    btnAddExtra.addEventListener('click', function () {
+      addExtraCostRow('', '');
+      var rows = document.querySelectorAll('#archive-extra-list .extra-row');
+      var last = rows[rows.length - 1];
+      var inp = last ? last.querySelector('.extra-name') : null;
+      if (inp) inp.focus();     // 新加一行直接把光标放进去，省一次点击
+    });
+  }
+  bindArchives();      // 档案列表的「打开 / 删除」（事件委托，一次绑定管所有行）
+  renderArchives();    // 进页面先把历史档案亮出来（有档案才显示这个区）
+
   /* 点「清空重填」→ 不再直接清，先问一句（Day 10 改动）。
      这一步只负责"把确认条亮出来"，真正清空在下面那个监听里。 */
   document.getElementById('btn-reset').addEventListener('click', function () {
@@ -4295,6 +6208,9 @@ function initApp() {
 
   /* 点「确定清空」→ 这次真清 */
   document.getElementById('btn-reset-yes').addEventListener('click', function () {
+    /* 清空 = 从头开始，确认锁定也一并解除（否则下次生成还被旧签名锁着） */
+    clearConfirmed();
+    applyLockUI();
     document.getElementById('from-city').value = '';
     document.getElementById('to-city-input').value = '';
     document.getElementById('days').value = '';

@@ -36,8 +36,19 @@ const FN_FILES = [
   'cloud/functions/places/index.js',
 ];
 
-/* AC15：真实地图是全站唯一联网点。除它之外只允许"跳去 12306 核价"这一个官方外链 */
-const ALLOWED_HOSTS = ['uri.amap.com', 'www.12306.cn'];
+/* AC15：站内不主动联网（断网照样能用），只允许"用户自己点开才跳"的指路外链。
+   2026-10-27 用户要求把查攻略/查吃住也做成跳转 → 新增抖音、小红书、B站、美团、携程。
+   ⚠️ 这几家都只是【点击跳转】，页面本身不发任何网络请求，所以 AC14 断网可用不受影响；
+   真正要守的底线是：主产品里不许出现会自动加载的外部资源（那由 A1/A2/A5 三条盯着）。 */
+const ALLOWED_HOSTS = [
+  'uri.amap.com',           // 高德：看路线/距离
+  'www.12306.cn',           // 铁路 12306：查票价余票
+  'www.douyin.com',         // 抖音：看真实游客视频
+  'www.xiaohongshu.com',    // 小红书：图文攻略
+  'search.bilibili.com',    // B 站：长视频攻略
+  'www.meituan.com',        // 美团：找吃的
+  'hotels.ctrip.com'        // 携程：比酒店
+];
 
 /* 顺手引的第三方库（CDN）会让"断网可用"当场失效 */
 const CDN_HINTS = ['cdn.', 'unpkg.com', 'jsdelivr', 'cdnjs', 'googleapis', 'bootcdn', 'staticfile'];
@@ -180,7 +191,7 @@ const outsiders = urls.filter(function (o) {
   return !ALLOWED_HOSTS.some(function (a) { return host === a || host.endsWith('.' + a); });
 });
 ok(urls.length > 0 && outsiders.length === 0,
-  'A4 主产品里的公网地址都在白名单内（AC15：全站只有一个联网点）',
+  'A4 主产品里的公网地址都在白名单内（AC15：站内不主动联网，只有用户点击的指路外链）',
   outsiders.length
     ? outsiders.map(function (o) { return o.file + ' → ' + o.url; }).join(' | ')
     : '共 ' + urls.length + ' 处公网地址，主机名：' + uniq(urls.map(function (o) { return new URL(o.url).host; })).join(' / '));

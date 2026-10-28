@@ -3,7 +3,7 @@
 > 这份文件是检查脚本的真实输出，不是手写的总结。
 > 重新跑一次脚本就会覆盖它。
 
-- 运行时间：2026/10/27 21:15:24
+- 运行时间：2026/10/28 12:57:30
 - 命令：node .workbuddy/skills/preflight-check/scripts/check-preflight.js
 - 范围：主产品三件套（index.html / app.js / style.css）+ 三个云函数 + 入库文件清单
 
@@ -11,7 +11,7 @@ A. 断网可用（AC14 / AC15 —— 只管主产品三件套）
   [PASS] A1 样式表全是本地文件（没引外链 CSS） —— 共 1 个 <link rel=stylesheet>，都是本地
   [PASS] A2 脚本全是本地文件（没引外链 JS） —— 共 1 个带 src 的 <script>，都是本地
   [PASS] A3 没有 type="module"（有它双击打开就不会执行） —— 共 2 个 <script>，都没有 type="module"
-  [PASS] A4 主产品里的公网地址都在白名单内（AC15：全站只有一个联网点） —— 共 3 处公网地址，主机名：www.12306.cn / uri.amap.com
+  [PASS] A4 主产品里的公网地址都在白名单内（AC15：站内不主动联网，只有用户点击的指路外链） —— 共 9 处公网地址，主机名：www.12306.cn / uri.amap.com / www.douyin.com / www.xiaohongshu.com / search.bilibili.com / www.meituan.com / hotels.ctrip.com
   [PASS] A5 主产品里没有 CDN 关键字（cdn. / unpkg / jsdelivr …） —— 比对了 7 个关键字，一个都没出现
 
 B. 密钥（真钥匙不出门）
@@ -38,7 +38,7 @@ E. 后端跨域白名单（Day 24 的成果别被改回去）
   [PASS] E4 白名单里有线上发布域名（*.app.workbuddy.host） —— https://meng-travel-plan.app.workbuddy.host , https://travel-planner-budget.app.workbuddy.host
 
 F. 仓库卫生（防手滑）
-  [PASS] F1 入库文件里没有超过 1MB 的（防误传大文件） —— 最大的一个是 app.js（220KB）
+  [PASS] F1 入库文件里没有超过 1MB 的（防误传大文件） —— 最大的一个是 app.js（289KB）
   [PASS] F2 node_modules 没有被提交进仓库 —— 干净
 
 ========================================================
